@@ -91,4 +91,9 @@ pre.run { background: #111; color: #eee; border-radius: 8px; padding: 10px; font
 .editor-form { width: 320px; flex-shrink: 0; }
 .editor-code { flex: 1; min-width: 0; }
 .monaco-wrap { border: 1px solid #111; border-radius: 8px; overflow: hidden; background: #1e1e1e; }
+
+/* deletable edge handle */
+.edge-delete { position: absolute; width: 20px; height: 20px; border-radius: 50%; border: 1px solid #111; background: #fff; color: #111; font-size: 13px; line-height: 1; cursor: pointer; padding: 0; pointer-events: all; }
+.edge-delete:hover { background: #111; color: #fff; }
+.react-flow__edge.selected .react-flow__edge-path { stroke: #111; stroke-width: 2; }
 .codebox { min-height: 280px; background: #111 !important; color: #eee !important; border-color: #111 !important; line-height: 1.5; tab-size: 2; }

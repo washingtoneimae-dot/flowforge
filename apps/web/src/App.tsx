@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ReactFlow, Background, Controls, MiniMap, addEdge, useNodesState, useEdgesState,
-  Handle, Position, NodeProps, Edge, Connection,
+  Handle, Position, NodeProps, Edge, Connection, BezierEdge, EdgeProps, EdgeLabelRenderer, useReactFlow,
 } from '@xyflow/react';
 import './index.css';
 
@@ -81,6 +81,26 @@ function PortNode({ data, selected }: NodeProps) {
 }
 const nodeTypes = { port: PortNode };
 
+function DeletableEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd, selected }: EdgeProps) {
+  const { setEdges } = useReactFlow();
+  return (
+    <>
+      <BezierEdge id={id} sourceX={sourceX} sourceY={sourceY} targetX={targetX} targetY={targetY} sourcePosition={sourcePosition} targetPosition={targetPosition} style={style} markerEnd={markerEnd} />
+      <EdgeLabelRenderer>
+        {(selected) && (
+          <button
+            className="edge-delete nodrag nopan"
+            style={{ transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px,${(sourceY + targetY) / 2}px)` }}
+            onClick={(e) => { e.stopPropagation(); setEdges((es) => es.filter((x) => x.id !== id)); }}
+            title="Delete connection"
+          >×</button>
+        )}
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+const edgeTypes = { deletable: DeletableEdge };
+
 const loadDisabled = (): string[] => {
   try { return JSON.parse(localStorage.getItem('ff.disabledNodes') ?? '[]'); } catch { return []; }
 };
@@ -131,12 +151,12 @@ export default function App() {
         id: n.id, type: 'port', position: n.position,
         data: { label: n.label ?? defOf(n.type)?.displayName ?? n.type, type: n.type, params: n.params ?? {}, kind: defOf(n.type)?.kind ?? 'action', outputs: defOf(n.type)?.outputs?.length ?? 1, blockId: n.params?.blockId },
       })));
-      setEdges(wf.definition.edges.map((e: any, i: number) => ({ id: `e${i}`, source: e.from, target: e.to, sourceHandle: String(e.fromIndex ?? 0) })));
+      setEdges(wf.definition.edges.map((e: any, i: number) => ({ id: `e${i}`, type: 'deletable', source: e.from, target: e.to, sourceHandle: String(e.fromIndex ?? 0) })));
     });
     // eslint-disable-next-line
   }, [currentId, nodeDefs.length]);
 
-  const onConnect = useCallback((c: Connection) => setEdges((eds) => addEdge({ ...c, sourceHandle: c.sourceHandle ?? '0' }, eds)), [setEdges]);
+  const onConnect = useCallback((c: Connection) => setEdges((eds) => addEdge({ ...c, type: 'deletable', sourceHandle: c.sourceHandle ?? '0' }, eds)), [setEdges]);
 
   const enabledDefs = useMemo(() => nodeDefs.filter((d) => !disabled.includes(d.key)), [nodeDefs, disabled]);
 
@@ -214,7 +234,7 @@ export default function App() {
       if (!collapsed.includes(b.blockId)) continue;
       for (const e of edges) {
         if (e.source === b.endId && !hiddenIds.has(e.target)) {
-          out.push({ ...e, id: `synth-${b.blockId}-${e.id}`, source: b.startId, sourceHandle: '0', style: { strokeDasharray: '4 4' } });
+          out.push({ ...e, id: `synth-${b.blockId}-${e.id}`, type: 'deletable', source: b.startId, sourceHandle: '0', style: { strokeDasharray: '4 4' } });
         }
       }
     }
@@ -431,8 +451,9 @@ export default function App() {
         </aside>
         <div className="canvas">
           <ReactFlow
-            nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes}
+            nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
             onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
+            deleteKeyCode={['Backspace', 'Delete']}
             onNodeClick={(_, n) => { setSelectedId(n.id); setTestResult(null); }} onPaneClick={() => setSelectedId(null)} fitView
           >
             <Background color="#ddd" gap={16} /><Controls /><MiniMap />
