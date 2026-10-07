@@ -378,6 +378,20 @@ export default function App() {
     setCurrentId(null); setNodes([]); setEdges([]); setName('Untitled workflow'); setRunResult(null); setActive(true); setCollapsed([]);
   };
 
+  const [wfMenu, setWfMenu] = useState<string | null>(null);
+
+  const deleteWorkflow = async (wfId: string) => {
+    const wf = workflows.find((w) => w.id === wfId);
+    if (!confirm(`Delete workflow "${wf?.name ?? wfId}"? This cannot be undone (export first if needed).`)) return;
+    await api(`/api/workflows/${wfId}`, { method: 'DELETE' });
+    setWorkflows(await api('/api/workflows'));
+    if (currentId === wfId) {
+      setCurrentId(null); setNodes([]); setEdges([]); setName('Untitled workflow');
+      setRunResult(null); setActive(true); setCollapsed([]);
+    }
+    setWfMenu(null);
+  };
+
   const exportWorkflow = async () => {
     if (!currentId) return;
     const doc = await api(`/api/workflows/${currentId}/export`);
@@ -671,7 +685,15 @@ export default function App() {
           ))}
           <h2>Workflows</h2>
           {workflows.map((w) => (
-            <div key={w.id} className={`wf-item ${w.id === currentId ? 'active' : ''}`} onClick={() => setCurrentId(w.id)}>{w.name}</div>
+            <div key={w.id} className={`wf-item ${w.id === currentId ? 'active' : ''}`}>
+              <span className="wf-name" onClick={() => { setCurrentId(w.id); setWfMenu(null); }}>{w.name}</span>
+              <button className="wf-dots" onClick={(e) => { e.stopPropagation(); setWfMenu(wfMenu === w.id ? null : w.id); }} title="Workflow options">⋮</button>
+              {wfMenu === w.id && (
+                <div className="wf-menu">
+                  <button onClick={() => deleteWorkflow(w.id)}>Delete workflow</button>
+                </div>
+              )}
+            </div>
           ))}
         </aside>
         <div className="canvas">
@@ -769,6 +791,7 @@ export default function App() {
           )}
         </aside>
       </div>
+      {wfMenu && <div className="menu-scrim" onClick={() => setWfMenu(null)} />}
 
       {showSettings && (
         <div className="overlay" onClick={() => setShowSettings(false)}>
