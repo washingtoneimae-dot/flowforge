@@ -358,6 +358,29 @@ export default function App() {
     await refreshNodes();
   };
 
+  const exportCustom = async (key: string) => {
+    const rows: any[] = await api('/api/custom-nodes');
+    const row = rows.find((r) => r.key === key);
+    if (!row) return;
+    const blob = new Blob([JSON.stringify(row, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${key}.custom-node.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const importCustom = async (file: File) => {
+    try {
+      const doc = JSON.parse(await file.text());
+      const r = await api('/api/custom-nodes', { method: 'POST', body: JSON.stringify(doc) });
+      if (r.error) throw new Error(r.error);
+      await refreshNodes();
+    } catch (e) {
+      alert(`Node import failed: ${(e as Error).message}`);
+    }
+  };
+
   const testCustomDraft = async () => {
     setEditTestResult(null);
     let items: any;
@@ -487,7 +510,13 @@ export default function App() {
             <div className="lib-head">
               <h2>Node Library</h2>
               <div className="spacer" />
-              {!editing && <button className="btn primary" onClick={openNewCustom}>+ New node</button>}
+              {!editing && <>
+                <button className="btn primary" onClick={openNewCustom}>+ New node</button>
+                <label className="btn ghost" style={{ cursor: 'pointer' }}>Import
+                  <input type="file" accept=".json,application/json" style={{ display: 'none' }}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) importCustom(f); e.target.value = ''; }} />
+                </label>
+              </>}
               <button className="btn ghost" onClick={() => { setShowLibrary(false); setEditing(null); }}>Close</button>
             </div>
             {editing ? (
@@ -549,6 +578,7 @@ export default function App() {
                         <button className="btn ghost" onClick={() => toggleDisabled(d.key)}>{disabled.includes(d.key) ? 'Enable' : 'Disable'}</button>
                         {d.custom && <>
                           <button className="btn ghost" onClick={() => openEditCustom(d.key)}>Edit</button>
+                          <button className="btn ghost" onClick={() => exportCustom(d.key)}>Export</button>
                           <button className="btn ghost" onClick={() => deleteCustom(d.key)}>Delete</button>
                         </>}
                       </div>

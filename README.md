@@ -117,6 +117,8 @@ locally — works offline, lazy-loaded). Same contract as the Code node —
 **Run test** button that executes the draft without saving. Saved nodes are
 stored in SQLite, hot-loaded into the registry, and usable in workflows
 immediately. Custom nodes are actions only (triggers need server wiring).
+Each custom card has **Export** (`key.custom-node.json`) and the Library header
+has **Import** — share nodes as files, same as workflows.
 
 All `code`/`json` inspector fields (Code, Python, JSON bodies, …) also use
 Monaco now: JavaScript/Python/JSON highlighting, `vs-dark` to match the theme.
