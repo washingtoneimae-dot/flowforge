@@ -1,0 +1,23 @@
+{
+  "key": "healthGrade",
+  "displayName": "Health Grade",
+  "description": "Grades disk usage into ok/warning/critical with a message.",
+  "category": "data",
+  "properties": [
+    {
+      "key": "warnAt",
+      "displayName": "Warn at %",
+      "type": "number",
+      "default": 80
+    },
+    {
+      "key": "critAt",
+      "displayName": "Critical at %",
+      "type": "number",
+      "default": 90
+    }
+  ],
+  "code": "const warnAt = Number(params.warnAt ?? 80);\nconst critAt = Number(params.critAt ?? 90);\nreturn items.map(i => {\n  const pct = Number(i.json.disk_root_pct ?? 0);\n  const grade = pct >= critAt ? \"critical\" : pct >= warnAt ? \"warning\" : \"ok\";\n  const message = grade === \"ok\" ? \"Disk usage normal\" : `Disk usage ${grade}: ${pct}%`;\n  return { json: { ...i.json, grade, message } };\n});",
+  "created_at": "2026-10-07T12:08:20.628Z",
+  "updated_at": "2026-10-07T12:08:20.628Z"
+}
