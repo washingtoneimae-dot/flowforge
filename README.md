@@ -41,6 +41,7 @@ packages/
 apps/
   server/       @flowforge/server     — REST API, webhooks (/hook/:path), cron scheduler, SQLite storage
   web/          @flowforge/web        — React canvas editor (@xyflow/react)
+  mcp/          @flowforge/mcp        — MCP server so AI agents can operate Flowforge
 ```
 
 Workflows are a DAG of node instances with typed edges. The engine executes the
@@ -139,6 +140,38 @@ as a single black node with a live count; outgoing edges rewire to it with a
 dashed line. Put one Start/End pair inside another to nest scripts. Markers
 are pass-throughs at runtime, so execution is unaffected. Collapsed state is
 saved in the workflow (`definition.collapsed`).
+
+## AI agents (MCP)
+
+`apps/mcp` is a Model Context Protocol server (stdio) so agents can operate
+Flowforge: browse/describe nodes, create/update/run/delete workflows, test
+single nodes, and author custom nodes when needed — node ids and canvas
+positions are auto-filled, run output is compacted for agent context.
+
+```bash
+pnpm --filter @flowforge/mcp build
+```
+
+Point any MCP client at it (Flowforge itself must be running):
+
+```json
+{
+  "mcpServers": {
+    "flowforge": {
+      "command": "node",
+      "args": ["/home/imae/flowforge/apps/mcp/dist/index.js"],
+      "env": { "FLOWFORGE_URL": "http://localhost:3000" }
+    }
+  }
+}
+```
+
+14 tools: `list_nodes`, `describe_node`, `list_workflows`, `get_workflow`,
+`create_workflow`, `update_workflow`, `delete_workflow`, `run_workflow`,
+`test_node`, `create_custom_node`, `delete_custom_node`, `export_workflow`,
+`import_workflow`, `list_executions` — plus a `flowforge://nodes-catalog`
+resource. Typical agent loop: `describe_node` → `create_custom_node` (if no
+fit) → `create_workflow` → `run_workflow` → fix from errors → repeat.
 
 ## Testing a single node
 

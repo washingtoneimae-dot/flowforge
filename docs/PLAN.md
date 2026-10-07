@@ -24,6 +24,7 @@
 - [x] Single-node test run (inspector + `POST /api/nodes/:key/test`)
 - [x] Node Library: categories, search, enable/disable, custom-node creator with code editor + draft test
 - [x] Script Start/End markers: collapsible, nestable script blocks
+- [x] MCP server: agents browse/describe nodes, CRUD + run workflows, author custom nodes
 
 ## Next
 
