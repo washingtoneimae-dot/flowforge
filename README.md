@@ -102,13 +102,40 @@ into `node_modules`, and the server picks it up automatically at boot.
 `ctx.items` is an array of `{ json }` objects — the same item shape n8n uses, so
 data flows between nodes without conversion.
 
+## Testing a single node
+
+Select a node → **Run test** in the inspector. Edit the test input
+(`[{ "json": {} }, ...]`), and the node's `execute()` runs with its current
+params (30s timeout). Also available as API:
+
+```
+POST /api/nodes/:key/test — { params: {...}, items: [{ json: {...} }] }
+```
+
+Node unit tests live next to the code (`packages/nodes-core/src/index.test.ts`,
+`packages/engine/src/index.test.ts`) — run with `pnpm test`.
+
+## Export / import
+
+Topbar **Export** downloads the current workflow as
+`*.flowforge.json` (`{ format, version, name, definition }`).
+**Import** uploads such a file (bare `{ nodes, edges }` also accepted):
+
+```
+GET  /api/workflows/:id/export — download versioned doc
+POST /api/workflows/import     — validate + create, rejects dangling edges
+```
+
 ## API overview
 
 ```
 GET    /api/nodes                 — list registered node types
+POST   /api/nodes/:key/test       — run one node with { params, items }
 GET    /api/workflows             — list workflows
 POST   /api/workflows             — create
+POST   /api/workflows/import     — import from export doc
 GET    /api/workflows/:id         — read one
+GET    /api/workflows/:id/export — download export doc
 PUT    /api/workflows/:id         — update (name, definition, active)
 DELETE /api/workflows/:id         — delete
 POST   /api/workflows/:id/run     — execute now ({ items: [...] })

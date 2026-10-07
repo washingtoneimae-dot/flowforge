@@ -39,6 +39,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<any>(null);
   const [active, setActive] = useState(true);
+  const [testInput, setTestInput] = useState('[{"json": {}}]');
+  const [testResult, setTestResult] = useState<any>(null);
 
   useEffect(() => { api('/api/nodes').then(setNodeDefs); api('/api/workflows').then(setWorkflows); }, []);
 
@@ -107,6 +109,43 @@ export default function App() {
     setCurrentId(null); setNodes([]); setEdges([]); setName('Untitled workflow'); setRunResult(null); setActive(true);
   };
 
+  const exportWorkflow = async () => {
+    if (!currentId) return;
+    const doc = await api(`/api/workflows/${currentId}/export`);
+    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${name.replace(/[^a-z0-9-_]+/gi, '_')}.flowforge.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const importWorkflow = async (file: File) => {
+    try {
+      const doc = JSON.parse(await file.text());
+      const wf = await api('/api/workflows/import', { method: 'POST', body: JSON.stringify(doc.name !== undefined || doc.definition !== undefined ? doc : { name: file.name, definition: doc }) });
+      if (wf.error) throw new Error(wf.error);
+      api('/api/workflows').then(setWorkflows);
+      setCurrentId(wf.id);
+    } catch (e) {
+      alert(`Import failed: ${(e as Error).message}`);
+    }
+  };
+
+  const testNode = async () => {
+    if (!selected) return;
+    let items: any;
+    try {
+      items = JSON.parse(testInput);
+      if (!Array.isArray(items)) throw new Error('must be an array');
+    } catch (e) { setTestResult({ error: `Bad test input: ${(e as Error).message}` }); return; }
+    const r = await api(`/api/nodes/${(selected.data as any).type}/test`, {
+      method: 'POST',
+      body: JSON.stringify({ params: (selected.data as any).params ?? {}, items }),
+    });
+    setTestResult(r);
+  };
+
   const triggers = useMemo(() => nodeDefs.filter((d) => d.kind === 'trigger'), [nodeDefs]);
   const actions = useMemo(() => nodeDefs.filter((d) => d.kind !== 'trigger'), [nodeDefs]);
 
@@ -120,6 +159,11 @@ export default function App() {
         </label>
         <div className="spacer" />
         <button className="btn ghost" onClick={newWorkflow}>New</button>
+        <button className="btn ghost" onClick={exportWorkflow} disabled={!currentId} title={currentId ? 'Download workflow JSON' : 'Save first'}>Export</button>
+        <label className="btn ghost" style={{ cursor: 'pointer' }}>Import
+          <input type="file" accept=".json,application/json" style={{ display: 'none' }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) importWorkflow(f); e.target.value = ''; }} />
+        </label>
         <button className="btn" onClick={save}>Save</button>
         <button className="btn primary" onClick={run}>Run</button>
       </div>
@@ -165,6 +209,15 @@ export default function App() {
                 </label>
               ))}
               <button className="btn ghost" onClick={deleteSelected}>Delete node</button>
+              <h3 style={{ marginTop: 20 }}>Test this node</h3>
+              <label className="field">
+                <span>Test input (items array)</span>
+                <textarea rows={3} value={testInput} onChange={(e) => setTestInput(e.target.value)} />
+              </label>
+              <button className="btn" onClick={testNode}>Run test</button>
+              {testResult && (
+                <pre className="run" style={{ marginTop: 8 }}>{JSON.stringify(testResult, null, 2)}</pre>
+              )}
             </>
           ) : <p className="muted">Select a node to configure it.</p>}
           {runResult && (

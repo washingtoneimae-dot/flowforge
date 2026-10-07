@@ -20,6 +20,8 @@
 - [x] Minimalist black/white/grey editor: palette, canvas, inspector, run panel
 - [x] Vitest suite for engine and core nodes
 - [x] Auto-loading of `flowforge-node-*` community packages
+- [x] Export/import of workflow JSON (`*.flowforge.json`, validated)
+- [x] Single-node test run (inspector + `POST /api/nodes/:key/test`)
 
 ## Next
 
@@ -29,4 +31,4 @@
 - [ ] Credentials store (env today; encrypted table later)
 - [ ] Official node packages: Slack, Discord, GitHub, Notion, Google Sheets
 - [ ] Example community node repo + template
-- [ ] Import/export of workflow JSON
+- [ ] Per-node run output preview in the inspector (test-run exists, last-run preview next)

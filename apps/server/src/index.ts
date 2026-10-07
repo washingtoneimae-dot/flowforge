@@ -1,6 +1,7 @@
 import express from 'express';
 import { db, WorkflowRow, ExecutionRow } from './db.js';
 import { nodeRegistry, resolveNode } from './registry.js';
+import { toExportDoc, parseImportDoc } from './workflowIo.js';
 import { executeWorkflow, Workflow } from '@flowforge/engine';
 import { mkdirSync, watch } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -19,9 +20,57 @@ app.get('/api/nodes', (_req, res) => {
   })));
 });
 
+app.post('/api/nodes/:key/test', async (req, res) => {
+  const def = resolveNode(req.params.key);
+  if (!def) return res.status(404).json({ error: `unknown node: ${req.params.key}` });
+  const params = (req.body?.params && typeof req.body.params === 'object' ? req.body.params : {}) as Record<string, unknown>;
+  const rawItems = Array.isArray(req.body?.items) ? req.body.items : [{ json: {} }];
+  const items = rawItems.map((it: any) => (it && typeof it.json === 'object' ? { json: it.json } : { json: (it ?? {}) as Record<string, unknown> }));
+  try {
+    const out = await withTimeout(
+      Promise.resolve(def.execute({ params, items, vars: {}, workflow: { id: 'test', name: 'node test' }, error: (m) => new Error(m) })),
+      30_000,
+      def.displayName,
+    );
+    if (out && typeof out === 'object' && Array.isArray((out as any).branches)) {
+      return res.json({ branches: (out as any).branches });
+    }
+    return res.json({ items: out });
+  } catch (e) { return res.status(400).json({ error: (e as Error).message }); }
+});
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Node "${label}" timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer!));
+}
+
 app.get('/api/workflows', (_req, res) => {
   const rows = db.prepare('SELECT id,name,active,created_at,updated_at FROM workflows ORDER BY updated_at DESC').all();
   res.json(rows);
+});
+
+app.post('/api/workflows/import', (req, res) => {
+  try {
+    const { name, definition } = parseImportDoc(req.body);
+    const now = new Date().toISOString();
+    const wfId = id();
+    db.prepare('INSERT INTO workflows (id,name,definition,active,created_at,updated_at) VALUES (?,?,?,1,?,?)')
+      .run(wfId, name, JSON.stringify(definition), now, now);
+    res.status(201).json({ id: wfId, name, definition, active: 1, created_at: now, updated_at: now });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+
+app.get('/api/workflows/:id/export', (req, res) => {
+  const row = db.prepare('SELECT * FROM workflows WHERE id=?').get(req.params.id) as WorkflowRow | undefined;
+  if (!row) return res.status(404).json({ error: 'not found' });
+  try {
+    const doc = toExportDoc(row.name, JSON.parse(row.definition));
+    res.setHeader('Content-Disposition', `attachment; filename="${row.name.replace(/[^a-z0-9-_]+/gi, '_')}.flowforge.json"`);
+    res.json(doc);
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
 });
 
 app.get('/api/workflows/:id', (req, res) => {
