@@ -94,6 +94,44 @@ function PortNode({ data, selected }: NodeProps) {
 }
 const nodeTypes = { port: PortNode };
 
+function FileField({ value, onChange, scope, nodeKey }: { value: string; onChange: (v: string) => void; scope: string; nodeKey?: string }) {
+  const [open, setOpen] = useState(false);
+  const [path, setPath] = useState('');
+  const [entries, setEntries] = useState<Array<{ name: string; dir: boolean }> | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const joinP = (base: string, name: string) => (base ? `${base}/${name}` : name).replace(/\/$/, '');
+  const browse = async (p: string) => {
+    setErr(null);
+    const qs = new URLSearchParams({ scope, path: p });
+    if (nodeKey) qs.set('node', nodeKey);
+    const r = await api(`/api/files?${qs}`);
+    if (r.error) { setErr(r.error); return; }
+    setPath(r.path ?? '');
+    setEntries(r.entries ?? []);
+    setOpen(true);
+  };
+  return (
+    <div>
+      <div className="row">
+        <input value={value ?? ''} onChange={(e) => onChange(e.target.value)} placeholder="path or {{ $json.file }}" />
+        <button type="button" className="btn ghost" onClick={() => (open ? setOpen(false) : browse(''))}>Browse</button>
+      </div>
+      {open && (
+        <div className="file-list">
+          {err && <div className="error">{err}</div>}
+          {path !== '' && <div className="file-row" onClick={() => browse(path.split('/').slice(0, -1).join('/'))}>.. (up)</div>}
+          {(entries ?? []).map((e) => (
+            <div key={e.name} className="file-row" onClick={() => (e.dir ? browse(joinP(path, e.name)) : (onChange(joinP(path, e.name)), setOpen(false)))}>
+              {e.dir ? '📁 ' : '📄 '}{e.name}
+            </div>
+          ))}
+          <button type="button" className="btn ghost" onClick={() => { onChange(path); setOpen(false); }}>Use this folder</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DeletableEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd, selected }: EdgeProps) {
   const { setEdges } = useReactFlow();
   return (
@@ -182,6 +220,10 @@ export default function App() {
   const [settingsClient, setSettingsClient] = useState('claude-code');
   const [copied, setCopied] = useState(false);
   const inspectorRef = useRef<HTMLElement>(null);
+  const [exprKeys, setExprKeys] = useState<string[]>([]);
+  const exprOn = (nodeId: string, key: string) => exprKeys.includes(`${nodeId}:${key}`);
+  const toggleExpr = (nodeId: string, key: string) =>
+    setExprKeys((ks) => (exprOn(nodeId, key) ? ks.filter((k) => k !== `${nodeId}:${key}`) : [...ks, `${nodeId}:${key}`]));
 
   useEffect(() => { api('/api/nodes').then(setNodeDefs); api('/api/workflows').then(setWorkflows); }, []);
   const refreshNodes = useCallback(() => api('/api/nodes').then(setNodeDefs), []);
@@ -723,13 +765,31 @@ export default function App() {
                   <button className="btn ghost" onClick={() => { openEditCustom((selected.data as any).type); setShowLibrary(true); }}>Edit code in Library →</button>
                 </div>
               )}
-              {(defOf((selected.data as any).type)?.properties ?? []).map((p: any) => (
+              {(defOf((selected.data as any).type)?.properties ?? []).map((p: any) => {
+                const exprKey = `${selected.id}:${p.key}`;
+                const isExpr = exprKeys.includes(exprKey);
+                const exprHint = ['string', 'number', 'json', 'code', 'file'].includes(p.type);
+                return (
                 <label key={p.key} className="field">
-                  <span>{p.displayName}</span>
+                  <span className="field-head">{p.displayName}
+                    {exprHint && (
+                      <button type="button" className={`expr-btn ${isExpr ? 'on' : ''}`} title="Toggle expression mode ({{ $json.x }})"
+                        onClick={(e) => { e.preventDefault(); toggleExpr(selected.id, p.key); }}>{'{{}}'}</button>
+                    )}
+                  </span>
+                  {isExpr && <small className="muted expr-hint">{'{{ $json.field }} · {{ $vars.x }} · {{ $params.y }} — full JS, per item'}</small>}
                   {p.type === 'options' ? (
                     <select value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)}>
                       {p.options.map((o: any) => <option key={String(o.value)} value={o.value}>{o.name}</option>)}
                     </select>
+                  ) : p.type === 'boolean' ? (
+                    <button type="button" className={`switch ${((selected.data as any).params?.[p.key] ?? p.default) ? 'on' : ''}`}
+                      onClick={() => setParam(p, !((selected.data as any).params?.[p.key] ?? p.default))}>
+                      <span className="knob" />
+                    </button>
+                  ) : p.type === 'file' ? (
+                    <FileField value={(selected.data as any).params?.[p.key] ?? ''} onChange={(v) => setParam(p, v)}
+                      scope={p.fileScope ?? 'sandbox'} nodeKey={(selected.data as any).type} />
                   ) : p.type === 'code' && defOf((selected.data as any).type)?.custom ? (
                     <textarea rows={3} value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)} placeholder="Value for this run — implementation lives in the Library" />
                   ) : p.type === 'code' || p.type === 'json' ? (
@@ -748,7 +808,8 @@ export default function App() {
                     <input value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)} />
                   )}
                 </label>
-              ))}
+                );
+              })}
               {selectedBlock && (
                 <>
                   <h3 style={{ marginTop: 20 }}>Script block</h3>

@@ -1,4 +1,7 @@
 import type { NodeDefinition, FlowItem, NodeExecuteContext, BranchOutput } from '@flowforge/node-sdk';
+import { evaluateExpression, scopeFor } from './expr.js';
+
+export { evaluateExpression, scopeFor };
 
 export interface NodeInstance {
   id: string;
@@ -131,6 +134,7 @@ export async function executeWorkflow(
         items,
         vars,
         workflow: { id: wf.id, name: wf.name },
+        expr: (template, item) => evaluateExpression(template, scopeFor(item, vars, n.params)),
         error: (m) => new Error(m),
       };
       try {

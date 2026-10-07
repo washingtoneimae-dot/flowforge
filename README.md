@@ -291,6 +291,27 @@ POST /api/nodes/:key/test — { params: {...}, items: [{ json: {...} }] }
 Node unit tests live next to the code (`packages/nodes-core/src/index.test.ts`,
 `packages/engine/src/index.test.ts`) — run with `pnpm test`.
 
+## Schema-driven inspector + expressions
+
+The canvas inspector is generated from each node's `properties` schema —
+`string`, `number`, `boolean` toggle, `options` dropdown, `json`, `code`,
+and `file` (a jailed browser: `data/sandbox`, or `data/custom/<nodeKey>/`
+for custom nodes via `GET /api/files`). Agents only ever write
+`execute()` + the schema; the UI comes free.
+
+Every text-like field takes **`{{ }}` expressions**, resolved per item at
+runtime with `$json`, `$vars`, `$params` in scope (full JS, 1s cap):
+
+```
+https://api.example.com/users/{{ $json.id }}
+{{ $json.n * 2 }} · {{ ($params.prefix ?? "u") + "-" + $json.id }}
+```
+
+A whole-value `{{ }}` preserves types (numbers stay numbers); mixed text
+interpolates. The `{{}}` toggle on each field marks expression mode. Nodes
+opt in via `ctx.expr(template, item)` — custom-node sandboxes get `expr`
+too. Legacy `$json.path` shorthand still works in condition/value fields.
+
 ## Export / import
 
 Topbar **Export** downloads the current workflow as

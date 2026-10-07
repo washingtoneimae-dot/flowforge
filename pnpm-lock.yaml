@@ -124,6 +124,9 @@ importers:
         specifier: workspace:*
         version: link:../node-sdk
     devDependencies:
+      '@flowforge/engine':
+        specifier: workspace:*
+        version: link:../engine
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.5

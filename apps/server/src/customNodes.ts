@@ -2,6 +2,7 @@ import vm from 'node:vm';
 import type { NodeDefinition, NodeExecuteContext, NodeProperty, FlowItem } from '@flowforge/node-sdk';
 import { db, CustomNodeRow, CustomNodeVersionRow } from './db.js';
 import { createCapabilities, normalizePermissions, NodePermissions, KvStore, EMPTY_PERMISSIONS } from './capabilities.js';
+import { evaluateExpression } from '@flowforge/engine';
 import { normalizeDocs, computeReusability, DocsTriple, Reusability } from './reusability.js';
 
 export type { NodePermissions };
@@ -82,7 +83,7 @@ export async function runExamples(
 export const KEY_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
 const MAX_KEY_LEN = 48;
 
-const PROP_TYPES = new Set(['string', 'number', 'boolean', 'options', 'collection', 'json', 'code']);
+const PROP_TYPES = new Set(['string', 'number', 'boolean', 'options', 'collection', 'json', 'code', 'file']);
 
 export interface CustomNodeInput {
   key: string;
@@ -157,7 +158,14 @@ export async function runCustomCode(
   const { nodeKey = 'adhoc', permissions = EMPTY_PERMISSIONS, limits, ...rest } = capsOpts;
   const { timeoutMs, maxItems } = normalizeLimits(limits ?? undefined);
   const caps = createCapabilities({ nodeKey, permissions, ...rest });
-  const sandbox = { items: ctx.items, params: ctx.params, console, fetch: caps.fetch, kv: caps.kv, files: caps.files };
+  const sandbox = {
+    items: ctx.items, params: ctx.params, console,
+    fetch: caps.fetch, kv: caps.kv, files: caps.files,
+    expr: (template: unknown, item: any) =>
+      evaluateExpression(template, {
+        $json: item?.json ?? {}, $vars: {}, $params: ctx.params as Record<string, unknown>,
+      }),
+  };
   const wrapped = `(async function(){ ${code} })()`;
   const result = new vm.Script(wrapped).runInNewContext(sandbox, { timeout: 5000 });
   const out = result && typeof result.then === 'function'

@@ -78,14 +78,19 @@ export const httpRequest = defineNode({
     { key: 'body', displayName: 'Body (JSON)', type: 'json', default: '' },
   ],
   async execute(ctx) {
-    const { method = 'GET', url, headers, body } = ctx.params as any;
+    const { method = 'GET', url: rawUrl, headers: rawHeaders, body: rawBody } = ctx.params as any;
+    const url = rawUrl ? String(rawUrl) : '';
     if (!url) throw ctx.error('URL is required');
     const out: any[] = [];
     for (const item of ctx.items) {
-      const res = await fetch(String(url), {
+      const resolvedUrl = String(ctx.expr(url, item) ?? '');
+      if (!resolvedUrl) throw ctx.error('URL resolved to empty');
+      const headersStr = rawHeaders ? String(ctx.expr(rawHeaders, item) ?? '') : '';
+      const bodyStr = rawBody && method !== 'GET' ? String(ctx.expr(rawBody, item) ?? '') : '';
+      const res = await fetch(resolvedUrl, {
         method: String(method),
-        headers: headers ? JSON.parse(String(headers)) : undefined,
-        body: body && method !== 'GET' ? String(body) : undefined,
+        headers: headersStr ? JSON.parse(headersStr) : undefined,
+        body: bodyStr || undefined,
       });
       const text = await res.text();
       let json: any;
@@ -110,8 +115,13 @@ export const setFields = defineNode({
   ],
   execute(ctx) {
     let extra: Record<string, unknown> = {};
-    try { extra = JSON.parse(String((ctx.params as any).fields ?? '{}')); } catch { throw ctx.error('Fields must be valid JSON'); }
-    return ctx.items.map((it) => ({ json: { ...it.json, ...extra } }));
+    const out: any[] = [];
+    for (const it of ctx.items) {
+      const resolved = String(ctx.expr(String((ctx.params as any).fields ?? '{}'), it) ?? '{}');
+      try { extra = JSON.parse(resolved); } catch { throw ctx.error('Fields must be valid JSON (after resolving expressions)'); }
+      out.push({ json: { ...it.json, ...extra } });
+    }
+    return out;
   },
 });
 
@@ -406,11 +416,13 @@ export const cryptoNode = defineNode({
     { key: 'field', displayName: 'Output field name', type: 'string', default: 'crypto', required: true },
   ],
   execute(ctx) {
-    const { action = 'uuid', value = '$json', field = 'crypto' } = ctx.params as any;
+    const { action = 'uuid', value: rawValue = '$json', field = 'crypto' } = ctx.params as any;
     return ctx.items.map((it) => {
+      const s = String(rawValue ?? '');
+      const resolved = s.includes('{{') ? ctx.expr(rawValue, it) : resolveValue(rawValue, it.json);
       let out: string;
       if (action === 'uuid') out = crypto.randomUUID();
-      else out = crypto.createHash(action === 'md5' ? 'md5' : 'sha256').update(String(resolveValue(value, it.json) ?? '')).digest('hex');
+      else out = crypto.createHash(action === 'md5' ? 'md5' : 'sha256').update(String(resolved ?? '')).digest('hex');
       return { json: { ...it.json, [String(field)]: out } };
     });
   },
@@ -452,11 +464,16 @@ export const sendEmailNode = defineNode({
     { key: 'body', displayName: 'Body', type: 'code', default: 'Hello from Flowforge!' },
   ],
   execute(ctx) {
-    const { to, subject, body } = ctx.params as any;
-    if (!to) throw ctx.error('"to" is required');
-    const configured = !!(process.env.SMTP_HOST && process.env.SMTP_FROM);
-    console.log(`[sendEmail] ${configured ? 'SMTP' : 'dry-run'} → to=${to} subject=${subject}`);
-    return ctx.items.map((it) => ({ json: { ...it.json, email: { dryRun: !configured, to, subject, body } } }));
+    const { to: rawTo, subject: rawSubject, body: rawBody } = ctx.params as any;
+    return ctx.items.map((it) => {
+      const to = String(ctx.expr(rawTo ?? '', it) ?? '');
+      const subject = String(ctx.expr(rawSubject ?? '', it) ?? '');
+      const body = String(ctx.expr(rawBody ?? '', it) ?? '');
+      if (!to) throw ctx.error('"to" is required');
+      const configured = !!(process.env.SMTP_HOST && process.env.SMTP_FROM);
+      console.log(`[sendEmail] ${configured ? 'SMTP' : 'dry-run'} → to=${to} subject=${subject}`);
+      return { json: { ...it.json, email: { dryRun: !configured, to, subject, body } } };
+    });
   },
 });
 
@@ -473,24 +490,32 @@ export const fileOpsNode = defineNode({
   outputs: ['main'],
   properties: [
     { key: 'operation', displayName: 'Operation', type: 'options', default: 'read', options: [{ name: 'Read', value: 'read' }, { name: 'Write', value: 'write' }, { name: 'List', value: 'list' }] },
-    { key: 'path', displayName: 'Path', type: 'string', default: 'hello.txt' },
+    { key: 'path', displayName: 'Path', type: 'file', fileScope: 'sandbox', default: 'hello.txt' },
     { key: 'content', displayName: 'Content (write only)', type: 'code', default: '' },
   ],
   async execute(ctx) {
-    const { operation = 'read', path: p = '', content = '' } = ctx.params as any;
-    const abs = isAbsolute(String(p)) ? String(p) : resolve(sandboxDir(), String(p));
-    if (operation === 'list') {
-      await mkdir(abs, { recursive: true });
-      const entries = await readdir(abs, { withFileTypes: true });
-      return ctx.items.map((it) => ({ json: { ...it.json, files: entries.map((e) => e.name) } }));
+    const { operation = 'read', path: rawPath = '', content: rawContent = '' } = ctx.params as any;
+    const out: any[] = [];
+    for (const it of ctx.items) {
+      const p = String(ctx.expr(rawPath, it) ?? '');
+      const content = String(ctx.expr(rawContent, it) ?? '');
+      const abs = isAbsolute(p) ? p : resolve(sandboxDir(), p);
+      if (operation === 'list') {
+        await mkdir(abs, { recursive: true });
+        const entries = await readdir(abs, { withFileTypes: true });
+        out.push({ json: { ...it.json, files: entries.map((e) => e.name) } });
+        continue;
+      }
+      if (operation === 'write') {
+        await mkdir(dirname(abs), { recursive: true });
+        await writeFile(abs, content);
+        out.push({ json: { ...it.json, written: abs, bytes: content.length } });
+        continue;
+      }
+      const data = await readFile(abs, 'utf8');
+      out.push({ json: { ...it.json, path: abs, content: data } });
     }
-    if (operation === 'write') {
-      await mkdir(dirname(abs), { recursive: true });
-      await writeFile(abs, String(content));
-      return ctx.items.map((it) => ({ json: { ...it.json, written: abs, bytes: String(content).length } }));
-    }
-    const data = await readFile(abs, 'utf8');
-    return ctx.items.map((it) => ({ json: { ...it.json, path: abs, content: data } }));
+    return out;
   },
 });
 

@@ -18,6 +18,8 @@ export interface NodeExecuteContext {
   vars: Record<string, unknown>;
   /** Workflow metadata. */
   workflow: { id: string; name: string };
+  /** Resolve `{{ }}` expressions against one item (`$json`, `$vars`, `$params` in scope). */
+  expr(template: unknown, item: FlowItem): unknown;
   /** Throw a typed node error instead of a generic one. */
   error(message: string): Error;
 }
@@ -29,7 +31,8 @@ export type NodePropertyType =
   | 'options'
   | 'collection'
   | 'json'
-  | 'code';
+  | 'code'
+  | 'file';
 
 export interface NodeProperty {
   key: string;
@@ -42,6 +45,8 @@ export interface NodeProperty {
   options?: Array<{ name: string; value: string | number | boolean }>;
   /** For type: 'collection' — nested fields */
   properties?: NodeProperty[];
+  /** For type: 'file' — which jail the browser lists */
+  fileScope?: 'sandbox' | 'custom';
 }
 
 export interface NodeDefinition {

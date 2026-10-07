@@ -123,4 +123,8 @@ describe('runCustomCode with capabilities', () => {
     expect(await runCustomCode(code, base, { nodeKey: 't', permissions: perms, kvStore })).toEqual([{ json: { n: 1 } }]);
     expect(await runCustomCode(code, base, { nodeKey: 't', permissions: perms, kvStore })).toEqual([{ json: { n: 2 } }]);
   });
+  it('exposes expr() in the sandbox', async () => {
+    const out: any = await runCustomCode('return [{ json: { u: expr("user-{{ $json.id }}", items[0]) } }];', { params: {}, items: [{ json: { id: 9 } }] });
+    expect(out).toEqual([{ json: { u: 'user-9' } }]);
+  });
 });

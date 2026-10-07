@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { evaluateExpression } from '@flowforge/engine';
 import { setFields, ifNode, filterNode, switchNode, splitOutNode, aggregateNode, cryptoNode, jsonParseNode, coreNodes, datetimeNode, waitNode, scriptStart, scriptEnd, nodeCategories } from './index.js';
 
 const ctx = (params: any, items: any[] = [{ json: {} }]) => ({
   params, items, vars: {}, workflow: { id: 'w', name: 'n' }, error: (m: string) => new Error(m),
+  expr: (t: any, item: any) => evaluateExpression(t, { $json: item.json, $vars: {}, $params: params }),
 });
 
 describe('setFields', () => {
@@ -12,6 +14,10 @@ describe('setFields', () => {
   });
   it('rejects invalid JSON', async () => {
     await expect(async () => setFields.execute(ctx({ fields: '{bad' }))).rejects.toThrow(/valid JSON/);
+  });
+  it('resolves {{ }} per item', async () => {
+    const out = await setFields.execute(ctx({ fields: '{"u":"user-{{ $json.id }}"}' }, [{ json: { id: 1 } }, { json: { id: 2 } }])) as any;
+    expect(out).toEqual([{ json: { id: 1, u: 'user-1' } }, { json: { id: 2, u: 'user-2' } }]);
   });
 });
 

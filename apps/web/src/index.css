@@ -76,6 +76,18 @@ body { background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui
 .editor-form .row input { flex: 1; }
 .check { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; margin: 6px 0; cursor: pointer; }
 .check code { background: #f0f0f0; padding: 0 4px; border-radius: 4px; font-size: 11px; }
+.field-head { display: flex; align-items: center; gap: 6px; }
+.expr-btn { margin-left: auto; background: #fff; border: 1px solid var(--line-2); border-radius: 6px; font-size: 10px; font-family: ui-monospace, monospace; padding: 1px 7px; cursor: pointer; color: var(--ink-3); }
+.expr-btn:hover { border-color: var(--ink); color: var(--ink); }
+.expr-btn.on { background: #111; color: #fff; border-color: #111; }
+.expr-hint { display: block; font-family: ui-monospace, monospace; font-size: 10px; margin: 2px 0 4px; }
+.switch { width: 38px; height: 22px; border-radius: 20px; border: 1px solid var(--line-2); background: #eee; cursor: pointer; position: relative; padding: 0; }
+.switch.on { background: #111; border-color: #111; }
+.switch .knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left 0.12s; }
+.switch.on .knob { left: 18px; }
+.file-list { border: 1px solid var(--line); border-radius: 8px; margin-top: 6px; padding: 6px; max-height: 180px; overflow-y: auto; background: #fff; }
+.file-row { font-size: 12px; padding: 5px 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-row:hover { background: #f0f0f0; }
 .icon-preview { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
 .ff-node .kind { font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
 .ff-node.status-error { border-color: var(--err); box-shadow: 0 0 0 1px var(--err), 0 0 12px rgba(217, 38, 38, 0.45); }

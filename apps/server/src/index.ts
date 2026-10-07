@@ -4,6 +4,8 @@ import { nodeRegistry, resolveNode, isCustomNode, categoryOf, refreshCustomNodes
 import { validateCustomNode, runCustomCode, listCustomNodeRows, normalizePermissions, parseRowPermissions, parseRowDocs, saveCustomNode, rollbackCustomNode, approveCustomNode, setCustomNodeEnabled, checkCustomTrust, rowToApi, getCustomNodeRow, refreshUsageScores } from './customNodes.js';
 import { searchNodes, workflowUsage } from './nodeSearch.js';
 import { contractLine } from './reusability.js';
+import { resolveRoot, listFiles } from './files.js';
+import { evaluateExpression } from '@flowforge/engine';
 import { loadMcpConfig, saveMcpConfig, mcpDistExists, MCP_TOOL_NAMES } from '@flowforge/node-sdk';
 import { toExportDoc, parseImportDoc } from './workflowIo.js';
 import { executeWorkflow, Workflow } from '@flowforge/engine';
@@ -169,15 +171,27 @@ app.post('/api/custom-nodes/test', async (req, res) => {
   } catch (e) { return res.status(400).json({ error: (e as Error).message }); }
 });
 
+/** Jailed file browser for `file`-type properties. */
+app.get('/api/files', (req, res) => {
+  try {
+    const scope = String(req.query.scope ?? 'sandbox');
+    const nodeKey = req.query.node === undefined ? undefined : String(req.query.node);
+    const rel = String(req.query.path ?? '');
+    const { root, label } = resolveRoot(scope, nodeKey);
+    res.json({ root: label, ...listFiles(root, rel) });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+
 app.post('/api/nodes/:key/test', async (req, res) => {
   const def = resolveNode(req.params.key);
   if (!def) return res.status(404).json({ error: `unknown node: ${req.params.key}` });
   const params = (req.body?.params && typeof req.body.params === 'object' ? req.body.params : {}) as Record<string, unknown>;
   const rawItems = Array.isArray(req.body?.items) ? req.body.items : [{ json: {} }];
   const items = rawItems.map((it: any) => (it && typeof it.json === 'object' ? { json: it.json } : { json: (it ?? {}) as Record<string, unknown> }));
+  const vars: Record<string, unknown> = {};
   try {
     const out = await withTimeout(
-      Promise.resolve(def.execute({ params, items, vars: {}, workflow: { id: 'test', name: 'node test' }, error: (m) => new Error(m) })),
+      Promise.resolve(def.execute({ params, items, vars, workflow: { id: 'test', name: 'node test' }, expr: (t, item) => evaluateExpression(t, { $json: item.json, $vars: vars, $params: params }), error: (m) => new Error(m) })),
       30_000,
       def.displayName,
     );
