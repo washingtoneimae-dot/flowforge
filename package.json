@@ -8,7 +8,11 @@
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev",
     "start": "pnpm --filter @flowforge/server start",
-    "typecheck": "pnpm -r exec tsc --noEmit"
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run"
   },
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "devDependencies": {
+    "vitest": "^5.0.3"
+  }
 }

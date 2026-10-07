@@ -3,6 +3,7 @@ import {
   ReactFlow, Background, Controls, MiniMap, addEdge, useNodesState, useEdgesState,
   Handle, Position, NodeProps, Edge, Connection,
 } from '@xyflow/react';
+import './index.css';
 
 const api = async (path: string, init?: RequestInit) => {
   const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...init });
@@ -11,14 +12,17 @@ const api = async (path: string, init?: RequestInit) => {
 
 function PortNode({ data, selected }: NodeProps) {
   const d = data as any;
+  const outs: number = d.outputs ?? 1;
   return (
-    <div style={{ padding: 8, border: selected ? '2px solid #7c5cff' : '1px solid #444', borderRadius: 8, background: '#1e1e2e', color: '#eee', minWidth: 140 }}>
+    <div className={`ff-node ${selected ? 'selected' : ''} ${d.status ? 'status-' + d.status : ''}`}>
       {d.kind !== 'trigger' && <Handle type="target" position={Position.Top} />}
-      <div style={{ fontWeight: 700, fontSize: 13 }}>{d.label}</div>
-      <div style={{ fontSize: 10, opacity: 0.6 }}>{d.type}</div>
-      {d.kind !== 'trigger' ? null : null}
-      {(d.type === 'if' ? [0, 1] : d.kind === 'trigger' || d.outputs[0] !== 'none' ? [0] : []).map((i: number) => (
-        <Handle key={i} type="source" position={Position.Bottom} id={String(i)} style={d.type === 'if' && i === 1 ? { left: '80%' } : undefined} />
+      <div className="title">{d.label}</div>
+      <div className="kind">{d.kind}</div>
+      {Array.from({ length: outs }).map((_, i) => (
+        <Handle
+          key={i} type="source" position={Position.Bottom} id={String(i)}
+          style={outs > 1 ? { left: `${((i + 1) / (outs + 1)) * 100}%`, background: '#111' } : { background: '#111' }}
+        />
       ))}
     </div>
   );
@@ -34,25 +38,25 @@ export default function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<any>(null);
+  const [active, setActive] = useState(true);
 
   useEffect(() => { api('/api/nodes').then(setNodeDefs); api('/api/workflows').then(setWorkflows); }, []);
+
+  const defOf = useCallback((t: string) => nodeDefs.find((d) => d.key === t), [nodeDefs]);
 
   useEffect(() => {
     if (!currentId) return;
     api(`/api/workflows/${currentId}`).then((wf) => {
       setName(wf.name);
-      const defs = nodeDefs.length ? nodeDefs : [];
+      setActive(!!wf.active);
       setNodes(wf.definition.nodes.map((n: any) => ({
         id: n.id, type: 'port', position: n.position,
-        data: { label: displayOf(n.type), type: n.type, params: n.params, kind: kindOf(n.type), outputs: ['main'] },
+        data: { label: n.label ?? defOf(n.type)?.displayName ?? n.type, type: n.type, params: n.params ?? {}, kind: defOf(n.type)?.kind ?? 'action', outputs: defOf(n.type)?.outputs?.length ?? 1 },
       })));
       setEdges(wf.definition.edges.map((e: any, i: number) => ({ id: `e${i}`, source: e.from, target: e.to, sourceHandle: String(e.fromIndex ?? 0) })));
     });
     // eslint-disable-next-line
-  }, [currentId]);
-
-  const displayOf = (t: string) => nodeDefs.find((d) => d.key === t)?.displayName ?? t;
-  const kindOf = (t: string) => nodeDefs.find((d) => d.key === t)?.kind ?? 'action';
+  }, [currentId, nodeDefs.length]);
 
   const onConnect = useCallback((c: Connection) => setEdges((eds) => addEdge({ ...c, sourceHandle: c.sourceHandle ?? '0' }, eds)), [setEdges]);
 
@@ -60,17 +64,27 @@ export default function App() {
     const nid = `n${Date.now().toString(36)}`;
     const params: any = {};
     for (const p of def.properties ?? []) params[p.key] = p.default;
-    setNodes((ns) => [...ns, { id: nid, type: 'port', position: { x: 80 + ns.length * 60, y: 80 + ns.length * 40 }, data: { label: def.displayName, type: def.key, params, kind: def.kind, outputs: def.outputs } }]);
+    setNodes((ns) => [...ns, { id: nid, type: 'port', position: { x: 120 + ns.length * 40, y: 80 + ns.length * 60 }, data: { label: def.displayName, type: def.key, params, kind: def.kind, outputs: def.outputs?.length ?? 1 } }]);
   };
 
   const selected = nodes.find((n) => n.id === selectedId);
+
+  const setParam = (p: any, value: unknown) =>
+    setNodes((ns) => ns.map((n) => n.id === selectedId ? { ...n, data: { ...n.data, params: { ...(n.data as any).params, [p.key]: value } } } : n));
+
+  const deleteSelected = () => {
+    if (!selectedId) return;
+    setNodes((ns) => ns.filter((n) => n.id !== selectedId));
+    setEdges((es) => es.filter((e) => e.source !== selectedId && e.target !== selectedId));
+    setSelectedId(null);
+  };
 
   const save = async () => {
     const definition = {
       nodes: nodes.map((n) => ({ id: n.id, type: n.data.type, position: n.position, params: n.data.params ?? {} })),
       edges: edges.map((e) => ({ from: e.source, to: e.target, fromIndex: Number(e.sourceHandle ?? 0) })),
     };
-    if (currentId) await api(`/api/workflows/${currentId}`, { method: 'PUT', body: JSON.stringify({ name, definition }) });
+    if (currentId) await api(`/api/workflows/${currentId}`, { method: 'PUT', body: JSON.stringify({ name, definition, active: active ? 1 : 0 }) });
     else {
       const wf = await api('/api/workflows', { method: 'POST', body: JSON.stringify({ name, definition }) });
       setCurrentId(wf.id);
@@ -84,59 +98,83 @@ export default function App() {
     if (!id) return;
     const r = await api(`/api/workflows/${id}/run`, { method: 'POST', body: '{}' });
     setRunResult(r);
+    const statusByNode: Record<string, string> = {};
+    for (const nr of r.results ?? []) statusByNode[nr.nodeId] = nr.status;
+    setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, status: statusByNode[n.id] } })));
   };
 
+  const newWorkflow = async () => {
+    setCurrentId(null); setNodes([]); setEdges([]); setName('Untitled workflow'); setRunResult(null); setActive(true);
+  };
+
+  const triggers = useMemo(() => nodeDefs.filter((d) => d.kind === 'trigger'), [nodeDefs]);
+  const actions = useMemo(() => nodeDefs.filter((d) => d.kind !== 'trigger'), [nodeDefs]);
+
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#11111b', color: '#eee', fontFamily: 'system-ui' }}>
-      <aside style={{ width: 220, borderRight: '1px solid #333', padding: 12, overflow: 'auto' }}>
-        <h3>Flowforge</h3>
-        <button onClick={() => { setCurrentId(null); setNodes([]); setEdges([]); setName('Untitled workflow'); }}>+ New</button>
-        <h4>Nodes</h4>
-        {nodeDefs.map((d) => <button key={d.key} onClick={() => addNode(d)} style={{ display: 'block', margin: '4px 0' }}>+ {d.displayName}</button>)}
-        <h4>Workflows</h4>
-        {workflows.map((w) => <div key={w.id} style={{ cursor: 'pointer', padding: 4, color: w.id === currentId ? '#7c5cff' : '#aaa' }} onClick={() => setCurrentId(w.id)}>{w.name}</div>)}
-      </aside>
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: 8, display: 'flex', gap: 8 }}>
-          <input value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1 }} />
-          <button onClick={save}>Save</button>
-          <button onClick={run}>▶ Run</button>
-        </div>
-        <div style={{ flex: 1 }} onClick={() => setSelectedId(null)}>
+    <div className="app">
+      <div className="topbar">
+        <h1>Flowforge</h1>
+        <input name="wfname" value={name} onChange={(e) => setName(e.target.value)} />
+        <label className="muted" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> active
+        </label>
+        <div className="spacer" />
+        <button className="btn ghost" onClick={newWorkflow}>New</button>
+        <button className="btn" onClick={save}>Save</button>
+        <button className="btn primary" onClick={run}>Run</button>
+      </div>
+      <div className="body">
+        <aside className="sidebar">
+          <h2>Triggers</h2>
+          {triggers.map((d) => <button key={d.key} className="node-btn" onClick={() => addNode(d)}>{d.displayName}<small>+</small></button>)}
+          <h2>Actions</h2>
+          {actions.map((d) => <button key={d.key} className="node-btn" onClick={() => addNode(d)}>{d.displayName}<small>+</small></button>)}
+          <h2>Workflows</h2>
+          {workflows.map((w) => (
+            <div key={w.id} className={`wf-item ${w.id === currentId ? 'active' : ''}`} onClick={() => setCurrentId(w.id)}>{w.name}</div>
+          ))}
+        </aside>
+        <div className="canvas">
           <ReactFlow
             nodes={nodes} edges={edges} nodeTypes={nodeTypes}
             onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
-            onNodeClick={(_, n) => setSelectedId(n.id)} fitView
+            onNodeClick={(_, n) => setSelectedId(n.id)} onPaneClick={() => setSelectedId(null)} fitView
           >
-            <Background /><Controls /><MiniMap />
+            <Background color="#ddd" gap={16} /><Controls /><MiniMap />
           </ReactFlow>
         </div>
-      </main>
-      <aside style={{ width: 280, borderLeft: '1px solid #333', padding: 12, overflow: 'auto' }}>
-        {selected ? (
-          <>
-            <h4>{String((selected.data as any).label)}</h4>
-            {nodeDefs.find((d) => d.key === (selected.data as any).type)?.properties.map((p: any) => (
-              <label key={p.key} style={{ display: 'block', margin: '8px 0', fontSize: 12 }}>
-                {p.displayName}
-                {p.type === 'code' ? (
-                  <textarea rows={8} style={{ width: '100%' }} value={(selected.data as any).params?.[p.key] ?? ''}
-                    onChange={(e) => setNodes((ns) => ns.map((n) => n.id === selected.id ? { ...n, data: { ...n.data, params: { ...(n.data as any).params, [p.key]: e.target.value } } } : n))} />
-                ) : (
-                  <input style={{ width: '100%' }} value={(selected.data as any).params?.[p.key] ?? ''}
-                    onChange={(e) => setNodes((ns) => ns.map((n) => n.id === selected.id ? { ...n, data: { ...n.data, params: { ...(n.data as any).params, [p.key]: e.target.value } } } : n))} />
-                )}
-              </label>
-            ))}
-          </>
-        ) : <p style={{ opacity: 0.5 }}>Select a node to edit its parameters.</p>}
-        {runResult && (
-          <>
-            <h4>Last run: {runResult.status}</h4>
-            <pre style={{ fontSize: 10, whiteSpace: 'pre-wrap' }}>{JSON.stringify(runResult.results?.map((r: any) => ({ node: r.nodeId, status: r.status, error: r.error, items: r.items?.length })), null, 2)}</pre>
-          </>
-        )}
-      </aside>
+        <aside className="inspector">
+          {selected ? (
+            <>
+              <h3>{String((selected.data as any).label)}</h3>
+              <div className="desc">{defOf((selected.data as any).type)?.description}</div>
+              {(defOf((selected.data as any).type)?.properties ?? []).map((p: any) => (
+                <label key={p.key} className="field">
+                  <span>{p.displayName}</span>
+                  {p.type === 'options' ? (
+                    <select value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)}>
+                      {p.options.map((o: any) => <option key={String(o.value)} value={o.value}>{o.name}</option>)}
+                    </select>
+                  ) : p.type === 'code' || p.type === 'json' ? (
+                    <textarea rows={p.type === 'code' ? 8 : 4} value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)} />
+                  ) : p.type === 'number' ? (
+                    <input type="number" value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, Number(e.target.value))} />
+                  ) : (
+                    <input value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)} />
+                  )}
+                </label>
+              ))}
+              <button className="btn ghost" onClick={deleteSelected}>Delete node</button>
+            </>
+          ) : <p className="muted">Select a node to configure it.</p>}
+          {runResult && (
+            <>
+              <h3 style={{ marginTop: 20 }}>Last run — {runResult.status}</h3>
+              <pre className="run">{JSON.stringify(runResult.results?.map((r: any) => ({ node: r.nodeId, status: r.status, error: r.error, items: r.items?.length })), null, 2)}</pre>
+            </>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }
