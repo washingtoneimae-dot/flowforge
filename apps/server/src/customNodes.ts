@@ -1,6 +1,10 @@
 import vm from 'node:vm';
 import type { NodeDefinition, NodeExecuteContext, NodeProperty, FlowItem } from '@flowforge/node-sdk';
 import { db, CustomNodeRow } from './db.js';
+import { createCapabilities, normalizePermissions, NodePermissions, KvStore, EMPTY_PERMISSIONS } from './capabilities.js';
+
+export type { NodePermissions };
+export { normalizePermissions };
 
 export const KEY_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
 const MAX_KEY_LEN = 48;
@@ -19,7 +23,7 @@ export interface CustomNodeInput {
 }
 
 /** Validate a custom-node payload. Throws on the first problem. Returns normalized input. */
-export function validateCustomNode(body: unknown): { key: string; displayName: string; description: string; category: string; properties: NodeProperty[]; code: string; icon: string } {
+export function validateCustomNode(body: unknown): { key: string; displayName: string; description: string; category: string; properties: NodeProperty[]; code: string; icon: string; permissions: NodePermissions } {
   if (!body || typeof body !== 'object') throw new Error('body must be an object');
   const b = body as any;
   const key = String(b.key ?? '');
@@ -50,26 +54,52 @@ export function validateCustomNode(body: unknown): { key: string; displayName: s
     properties: properties as NodeProperty[],
     code,
     icon,
+    permissions: normalizePermissions(b.permissions),
   };
 }
 
 /**
- * Run user-supplied node code in a sandbox. Same contract as the Code node:
- * `items`, `params` in scope; return an array of `{ json }` items or `{ branches }`.
+ * Run user-supplied node code in a sandbox. Same contract as the Code node
+ * (`items`, `params` in scope; return items or `{ branches }`), plus declared
+ * capabilities: `fetch` (allowlisted hosts), `kv`, `files`. May await.
  */
-export function runCustomCode(code: string, ctx: Pick<NodeExecuteContext, 'items' | 'params'>): unknown {
-  const sandbox = { items: ctx.items, params: ctx.params, console };
-  const wrapped = `(function(){ ${code} })()`;
+export async function runCustomCode(
+  code: string,
+  ctx: Pick<NodeExecuteContext, 'items' | 'params'>,
+  capsOpts: {
+    nodeKey?: string;
+    permissions?: NodePermissions;
+    fetchImpl?: typeof fetch;
+    dnsLookup?: (host: string) => Promise<string[]>;
+    kvStore?: KvStore;
+    filesRoot?: string;
+  } = {},
+): Promise<unknown> {
+  const { nodeKey = 'adhoc', permissions = EMPTY_PERMISSIONS, ...rest } = capsOpts;
+  const caps = createCapabilities({ nodeKey, permissions, ...rest });
+  const sandbox = { items: ctx.items, params: ctx.params, console, fetch: caps.fetch, kv: caps.kv, files: caps.files };
+  const wrapped = `(async function(){ ${code} })()`;
   const result = new vm.Script(wrapped).runInNewContext(sandbox, { timeout: 5000 });
-  if (result && typeof result === 'object' && Array.isArray((result as any).branches)) {
-    const branches = (result as any).branches as unknown[];
+  const out = result && typeof result.then === 'function'
+    ? await Promise.race([
+        result,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Code timed out after 10000ms')), 10_000)),
+      ])
+    : result;
+  if (out && typeof out === 'object' && Array.isArray((out as any).branches)) {
+    const branches = (out as any).branches as unknown[];
     for (const [i, b] of branches.entries()) {
       if (!Array.isArray(b)) throw new Error(`branches[${i}] must be an array`);
     }
     return { branches: (branches as FlowItem[][]).map((arr) => arr.map((r: any) => (r && r.json ? r : { json: r }))) };
   }
-  if (!Array.isArray(result)) throw new Error('Code must return an array of items (or { branches: [...] })');
-  return (result as any[]).map((r: any) => (r && r.json ? r : { json: r }));
+  if (!Array.isArray(out)) throw new Error('Code must return an array of items (or { branches: [...] })');
+  return (out as any[]).map((r: any) => (r && r.json ? r : { json: r }));
+}
+
+export function parseRowPermissions(row: CustomNodeRow): NodePermissions {
+  try { return normalizePermissions(JSON.parse(row.permissions ?? '{}')); }
+  catch { return { ...EMPTY_PERMISSIONS }; }
 }
 
 export function rowToDefinition(row: CustomNodeRow): NodeDefinition {
@@ -79,6 +109,7 @@ export function rowToDefinition(row: CustomNodeRow): NodeDefinition {
     if (Array.isArray(parsed)) properties = parsed;
   } catch { /* treat as [] */ }
   const code = row.code;
+  const permissions = parseRowPermissions(row);
   return {
     key: row.key,
     displayName: row.display_name,
@@ -90,9 +121,9 @@ export function rowToDefinition(row: CustomNodeRow): NodeDefinition {
     inputs: ['main'],
     outputs: ['main'],
     properties,
-    execute(ctx) {
+    async execute(ctx) {
       try {
-        return runCustomCode(code, ctx) as any;
+        return await runCustomCode(code, ctx, { nodeKey: row.key, permissions }) as any;
       } catch (err) {
         throw ctx.error((err as Error).message);
       }

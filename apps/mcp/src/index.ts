@@ -178,9 +178,14 @@ tool(
     properties: z.array(z.any()).optional().describe('Inspector fields: [{ key, displayName, type, default, required }]'),
     code: z.string().describe('JavaScript body, e.g. "return items.map(i => ({ json: i.json }));"'),
     icon: z.string().optional().describe('Emoji or data:image/... URL shown left of the node'),
+    permissions: z.object({
+      network: z.array(z.string()).optional().describe('Allowlisted hosts, e.g. ["api.example.com"] (code gets fetch)'),
+      kv: z.boolean().optional().describe('Private key/value store (code gets kv)'),
+      files: z.boolean().optional().describe('Scoped files under data/custom/<key>/ (code gets files)'),
+    }).optional().describe('Capabilities granted to the code. Default: none.'),
   },
-  async ({ key, displayName, description, category, properties, code, icon }) =>
-    text(await ff('/api/custom-nodes', 'POST', { key, displayName, description: description ?? '', category: category ?? 'custom', properties: properties ?? [], code, icon: icon ?? '' })),
+  async ({ key, displayName, description, category, properties, code, icon, permissions }) =>
+    text(await ff('/api/custom-nodes', 'POST', { key, displayName, description: description ?? '', category: category ?? 'custom', properties: properties ?? [], code, icon: icon ?? '', permissions: permissions ?? {} })),
 );
 
 tool(

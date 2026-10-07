@@ -179,6 +179,36 @@ generates copy-paste configs for Claude Code / Claude Desktop / generic
 clients, stores the public URL, and toggles which tools agents may use
 (`GET/PUT /api/settings/mcp`, persisted in `data/mcp-config.json`).
 
+## Capability sandbox (permissions)
+
+Custom-node code runs in a `vm` sandbox with `items`/`params` in scope — and,
+only if the node declares them, three capabilities:
+
+| Permission | Code gets | Scope |
+|---|---|---|
+| `network: ["api.example.com", "*.example.com"]` | `fetch(url, init)` | Host allowlist (exact or `*.` subdomain), http(s) only, 10s timeout, DNS-resolved private IPs rejected (SSRF guard) |
+| `kv: true` | `kv.get/set/del/getJson/setJson` | SQLite store namespaced to the node — counters, caches, cursors |
+| `files: true` | `files.read/write/list/del` | Jaled to `data/custom/<nodeKey>/` — traversal rejected |
+
+Anything ungranted fails with a clear error (`capability "network" is not
+granted — enable it in the node's permissions`) instead of a `ReferenceError`.
+Async code is awaited (10s cap on top of the 5s sync cap).
+
+```js
+// needs permissions: { network: ["api.coingecko.com"], kv: true }
+const seen = kv.getJson('seen') ?? [];
+const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
+const price = (await r.json()).bitcoin.usd;
+const fresh = !seen.includes(price);
+if (fresh) kv.setJson('seen', [...seen.slice(-99), price]);
+return items.map(i => ({ json: { ...i.json, btc: price, fresh } }));
+```
+
+Set permissions in Library → node editor (hosts textarea + checkboxes),
+validate them with draft **Run test**, or pass `permissions` to
+`POST /api/custom-nodes` / MCP `create_custom_node`. They persist on the node,
+travel with export/import, and apply to saved-node tests too.
+
 ## Testing a single node
 
 Select a node → **Run test** in the inspector. Edit the test input

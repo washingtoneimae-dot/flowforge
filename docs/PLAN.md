@@ -26,6 +26,7 @@
 - [x] Script Start/End markers: collapsible, nestable script blocks
 - [x] MCP server: agents browse/describe nodes, CRUD + run workflows, author custom nodes
 - [x] Settings page: MCP status, client configs (Claude Code/Desktop), public URL, tool toggles
+- [x] Capability sandbox: declared network/kv/files permissions on custom nodes, enforced at runtime
 
 ## Next
 

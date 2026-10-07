@@ -1,7 +1,7 @@
 import express from 'express';
 import { db, WorkflowRow, ExecutionRow } from './db.js';
 import { nodeRegistry, resolveNode, isCustomNode, categoryOf, refreshCustomNodes } from './registry.js';
-import { validateCustomNode, runCustomCode, listCustomNodeRows } from './customNodes.js';
+import { validateCustomNode, runCustomCode, listCustomNodeRows, normalizePermissions, parseRowPermissions } from './customNodes.js';
 import { loadMcpConfig, saveMcpConfig, mcpDistExists, MCP_TOOL_NAMES } from '@flowforge/node-sdk';
 import { toExportDoc, parseImportDoc } from './workflowIo.js';
 import { executeWorkflow, Workflow } from '@flowforge/engine';
@@ -61,6 +61,7 @@ app.get('/api/custom-nodes', (_req, res) => {
   res.json(listCustomNodeRows().map((r) => ({
     key: r.key, displayName: r.display_name, description: r.description,
     category: r.category, properties: JSON.parse(r.properties), code: r.code, icon: r.icon ?? '',
+    permissions: (() => { try { return JSON.parse(r.permissions ?? '{}'); } catch { return {}; } })(),
     created_at: r.created_at, updated_at: r.updated_at,
   })));
 });
@@ -72,8 +73,8 @@ app.post('/api/custom-nodes', (req, res) => {
       return res.status(409).json({ error: `key "${v.key}" is already used by a built-in node` });
     }
     const now = new Date().toISOString();
-    db.prepare('INSERT OR REPLACE INTO custom_nodes (key,display_name,description,category,properties,code,icon,created_at,updated_at) VALUES (?,?,?,?,?,?,?,COALESCE((SELECT created_at FROM custom_nodes WHERE key=?),?),?)')
-      .run(v.key, v.displayName, v.description, v.category, JSON.stringify(v.properties), v.code, v.icon, v.key, now, now);
+    db.prepare('INSERT OR REPLACE INTO custom_nodes (key,display_name,description,category,properties,code,icon,permissions,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,COALESCE((SELECT created_at FROM custom_nodes WHERE key=?),?),?)')
+      .run(v.key, v.displayName, v.description, v.category, JSON.stringify(v.properties), v.code, v.icon, JSON.stringify(v.permissions), v.key, now, now);
     refreshCustomNodes();
     res.status(201).json({ ok: true, key: v.key });
   } catch (e) { res.status(400).json({ error: (e as Error).message }); }
@@ -86,15 +87,18 @@ app.delete('/api/custom-nodes/:key', (req, res) => {
   res.json({ ok: true });
 });
 
-/** Test an unsaved draft: { code, params, items } — no DB write. */
-app.post('/api/custom-nodes/test', (req, res) => {
+/** Test an unsaved draft: { code, params, items, permissions } — no DB write. */
+app.post('/api/custom-nodes/test', async (req, res) => {
   const code = String(req.body?.code ?? '');
   if (!code.trim()) return res.status(400).json({ error: 'code is required' });
   const params = (req.body?.params && typeof req.body.params === 'object' ? req.body.params : {}) as Record<string, unknown>;
   const rawItems = Array.isArray(req.body?.items) ? req.body.items : [{ json: {} }];
   const items = rawItems.map((it: any) => (it && typeof it.json === 'object' ? { json: it.json } : { json: (it ?? {}) as Record<string, unknown> }));
+  let permissions;
+  try { permissions = normalizePermissions(req.body?.permissions); }
+  catch (e) { return res.status(400).json({ error: (e as Error).message }); }
   try {
-    const out = runCustomCode(code, { items, params });
+    const out = await runCustomCode(code, { items, params }, { nodeKey: 'draft', permissions });
     if (out && typeof out === 'object' && Array.isArray((out as any).branches)) return res.json({ branches: (out as any).branches });
     return res.json({ items: out });
   } catch (e) { return res.status(400).json({ error: (e as Error).message }); }

@@ -40,7 +40,18 @@ CREATE TABLE IF NOT EXISTS custom_nodes (
 try {
   db.exec(`ALTER TABLE custom_nodes ADD COLUMN icon TEXT NOT NULL DEFAULT ''`);
 } catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE custom_nodes ADD COLUMN permissions TEXT NOT NULL DEFAULT '{"network":[],"kv":false,"files":false}'`);
+} catch { /* column already exists */ }
+db.exec(`
+CREATE TABLE IF NOT EXISTS custom_kv (
+  node_key TEXT NOT NULL,
+  k TEXT NOT NULL,
+  v TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (node_key, k)
+);`);
 
 export interface WorkflowRow { id: string; name: string; definition: string; active: number; created_at: string; updated_at: string; }
 export interface ExecutionRow { id: string; workflow_id: string; status: string; result: string; started_at: string; finished_at: string; }
-export interface CustomNodeRow { key: string; display_name: string; description: string; category: string; properties: string; code: string; icon: string; created_at: string; updated_at: string; }
+export interface CustomNodeRow { key: string; display_name: string; description: string; category: string; properties: string; code: string; icon: string; permissions: string; created_at: string; updated_at: string; }

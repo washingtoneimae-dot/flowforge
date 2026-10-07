@@ -52,6 +52,8 @@ body { background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui
 .lib-card-title.node-row { justify-content: flex-start; }
 .editor-form .row { display: flex; gap: 8px; }
 .editor-form .row input { flex: 1; }
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; margin: 6px 0; cursor: pointer; }
+.check code { background: #f0f0f0; padding: 0 4px; border-radius: 4px; font-size: 11px; }
 .icon-preview { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
 .ff-node .kind { font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
 .ff-node.status-error { border-color: var(--ink); border-style: dashed; }

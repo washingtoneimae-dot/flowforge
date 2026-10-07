@@ -36,8 +36,16 @@ describe('runCustomCode', () => {
     const out: any = await runCustomCode('return { branches: [items, []] };', { ...base, items: [{ json: {} }] });
     expect(out.branches[0]).toHaveLength(1);
   });
-  it('throws when code does not return an array', () => {
-    expect(() => runCustomCode('return 42;', { ...base, items: [] })).toThrow(/array/);
+  it('rejects when code does not return an array', async () => {
+    await expect(runCustomCode('return 42;', { ...base, items: [] })).rejects.toThrow(/array/);
+  });
+  it('awaits async code', async () => {
+    const out: any = await runCustomCode('return Promise.resolve(items);', { ...base, items: [{ json: { a: 1 } }] });
+    expect(out).toEqual([{ json: { a: 1 } }]);
+  });
+  it('denies ungranted capabilities with a helpful error', async () => {
+    await expect(runCustomCode('return fetch("https://example.com").then(r => items);', { ...base, items: [] }))
+      .rejects.toThrow(/not granted/);
   });
 });
 

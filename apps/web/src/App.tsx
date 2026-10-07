@@ -402,7 +402,7 @@ export default function App() {
   };
 
   const openNewCustom = () => {
-    setEditing({ key: '', displayName: '', description: '', category: 'custom', icon: '', properties: '[]', code: '// items: [{ json }], params: your fields\nreturn items.map(i => ({ json: { ...i.json } }));' });
+    setEditing({ key: '', displayName: '', description: '', category: 'custom', icon: '', permHosts: '', permKv: false, permFiles: false, properties: '[]', code: '// items: [{ json }], params: your fields\nreturn items.map(i => ({ json: { ...i.json } }));' });
     setEditError(null);
     setEditTestResult(null);
     setCustomTestInput('[{"json":{}}]');
@@ -412,11 +412,18 @@ export default function App() {
     const rows: any[] = await api('/api/custom-nodes');
     const row = rows.find((r) => r.key === key);
     if (!row) return;
-    setEditing({ ...row, properties: JSON.stringify(row.properties ?? [], null, 2) });
+    const perms = row.permissions && typeof row.permissions === 'object' ? row.permissions : {};
+    setEditing({ ...row, properties: JSON.stringify(row.properties ?? [], null, 2), permHosts: (perms.network ?? []).join('\n'), permKv: !!perms.kv, permFiles: !!perms.files });
     setEditError(null);
     setEditTestResult(null);
     setCustomTestInput('[{"json":{}}]');
   };
+
+  const editingPermissions = () => ({
+    network: String(editing.permHosts ?? '').split('\n').map((s) => s.trim()).filter(Boolean),
+    kv: !!editing.permKv,
+    files: !!editing.permFiles,
+  });
 
   const saveCustom = async () => {
     setEditError(null);
@@ -427,7 +434,7 @@ export default function App() {
     } catch (e) { setEditError(`Bad properties JSON: ${(e as Error).message}`); return; }
     const r = await api('/api/custom-nodes', {
       method: 'POST',
-      body: JSON.stringify({ key: editing.key, displayName: editing.displayName, description: editing.description, category: editing.category || 'custom', icon: editing.icon || '', properties, code: editing.code }),
+      body: JSON.stringify({ key: editing.key, displayName: editing.displayName, description: editing.description, category: editing.category || 'custom', icon: editing.icon || '', permissions: editingPermissions(), properties, code: editing.code }),
     });
     if (r.error) { setEditError(r.error); return; }
     await refreshNodes();
@@ -475,7 +482,7 @@ export default function App() {
       const props = editing.properties.trim() ? JSON.parse(editing.properties) : [];
       for (const p of props) if (p.default !== undefined) params[p.key] = p.default;
     } catch { /* ignore */ }
-    const r = await api('/api/custom-nodes/test', { method: 'POST', body: JSON.stringify({ code: editing.code, params, items }) });
+    const r = await api('/api/custom-nodes/test', { method: 'POST', body: JSON.stringify({ code: editing.code, params, items, permissions: editingPermissions() }) });
     setEditTestResult(r);
   };
 
@@ -690,6 +697,12 @@ export default function App() {
                     <React.Suspense fallback={<CodeFieldFallback height={130} />}>
                       <CodeField height={130} language="json" value={editing.properties} onChange={(v) => setEditing({ ...editing, properties: v })} />
                     </React.Suspense></label>
+                  <div className="field"><span>Permissions — capabilities granted to the code (none by default)</span>
+                    <label className="field"><span>Network hosts, one per line (code gets <code>fetch</code>)</span>
+                      <textarea rows={2} value={editing.permHosts ?? ''} onChange={(e) => setEditing({ ...editing, permHosts: e.target.value })} placeholder={'api.example.com\n*.example.com'} /></label>
+                    <label className="check"><input type="checkbox" checked={!!editing.permKv} onChange={(e) => setEditing({ ...editing, permKv: e.target.checked })} /> Key-value store (<code>kv.get/set/del/getJson/setJson</code>, private to this node)</label>
+                    <label className="check"><input type="checkbox" checked={!!editing.permFiles} onChange={(e) => setEditing({ ...editing, permFiles: e.target.checked })} /> Files (<code>files.read/write/list/del</code> under <code>data/custom/{editing.key || '<key>'}/</code>)</label>
+                  </div>
                   {editError && <div className="error">{editError}</div>}
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn primary" onClick={saveCustom}>Save node</button>
