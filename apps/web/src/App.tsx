@@ -411,7 +411,7 @@ export default function App() {
   };
 
   const openNewCustom = () => {
-    setEditing({ key: '', displayName: '', description: '', category: 'custom', icon: '', permHosts: '', permKv: false, permFiles: false, limTimeout: 10000, limMax: 10000, examplesText: '[]', properties: '[]', code: '// items: [{ json }], params: your fields\nreturn items.map(i => ({ json: { ...i.json } }));' });
+    setEditing({ key: '', displayName: '', description: '', docAction: '', docTarget: '', docOutput: '', category: 'custom', icon: '', permHosts: '', permKv: false, permFiles: false, limTimeout: 10000, limMax: 10000, examplesText: '[]', properties: '[]', code: '// items: [{ json }], params: your fields\nreturn items.map(i => ({ json: { ...i.json } }));' });
     setEditError(null);
     setEditTestResult(null);
     setEditSaveResult(null);
@@ -426,7 +426,8 @@ export default function App() {
     if (!row) return;
     const perms = row.permissions && typeof row.permissions === 'object' ? row.permissions : {};
     const lims = row.limits && typeof row.limits === 'object' ? row.limits : {};
-    setEditing({ ...row, properties: JSON.stringify(row.properties ?? [], null, 2), permHosts: (perms.network ?? []).join('\n'), permKv: !!perms.kv, permFiles: !!perms.files, limTimeout: lims.timeoutMs ?? 10000, limMax: lims.maxItems ?? 10000, examplesText: JSON.stringify(row.examples ?? [], null, 2) });
+    const docs = row.docs && typeof row.docs === 'object' ? row.docs : {};
+    setEditing({ ...row, properties: JSON.stringify(row.properties ?? [], null, 2), permHosts: (perms.network ?? []).join('\n'), permKv: !!perms.kv, permFiles: !!perms.files, limTimeout: lims.timeoutMs ?? 10000, limMax: lims.maxItems ?? 10000, examplesText: JSON.stringify(row.examples ?? [], null, 2), docAction: docs.action ?? '', docTarget: docs.target ?? '', docOutput: docs.output ?? '' });
     setEditError(null);
     setEditTestResult(null);
     setEditSaveResult(null);
@@ -457,7 +458,7 @@ export default function App() {
     } catch (e) { setEditError(`Bad examples JSON: ${(e as Error).message}`); return; }
     const r = await api('/api/custom-nodes', {
       method: 'POST',
-      body: JSON.stringify({ key: editing.key, displayName: editing.displayName, description: editing.description, category: editing.category || 'custom', icon: editing.icon || '', permissions: editingPermissions(), examples, limits: { timeoutMs: Number(editing.limTimeout) || 10000, maxItems: Number(editing.limMax) || 10000 }, author: 'human', properties, code: editing.code }),
+      body: JSON.stringify({ key: editing.key, displayName: editing.displayName, description: editing.description, category: editing.category || 'custom', icon: editing.icon || '', permissions: editingPermissions(), examples, limits: { timeoutMs: Number(editing.limTimeout) || 10000, maxItems: Number(editing.limMax) || 10000 }, docs: { action: editing.docAction || undefined, target: editing.docTarget || undefined, output: editing.docOutput || undefined }, author: 'human', properties, code: editing.code }),
     });
     if (r.error) { setEditError(r.error); return; }
     setEditSaveResult(r);
@@ -520,6 +521,12 @@ export default function App() {
       alert(`Node import failed: ${(e as Error).message}`);
     }
   };
+
+  const editReuse = useMemo(
+    () => (editing ? nodeDefs.find((d) => d.key === editing.key)?.trust?.reusability : undefined),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editing?.key, nodeDefs],
+  );
 
   // Reuse-before-create: suggest similar existing nodes while naming a new one.
   useEffect(() => {
@@ -741,6 +748,14 @@ export default function App() {
                     <input value={editing.displayName} onChange={(e) => setEditing({ ...editing, displayName: e.target.value })} placeholder="My Node" /></label>
                   <label className="field"><span>Description</span>
                     <input value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} placeholder="What it does" /></label>
+                  <div className="field"><span>Structured docs — Action + Target + Output shape (agents + search use this)</span>
+                    <label className="field"><span>Action</span>
+                      <input value={editing.docAction ?? ''} onChange={(e) => setEditing({ ...editing, docAction: e.target.value })} placeholder="Fetches price of" /></label>
+                    <label className="field"><span>Target</span>
+                      <input value={editing.docTarget ?? ''} onChange={(e) => setEditing({ ...editing, docTarget: e.target.value })} placeholder="Bitcoin (CoinGecko)" /></label>
+                    <label className="field"><span>Output shape</span>
+                      <input value={editing.docOutput ?? ''} onChange={(e) => setEditing({ ...editing, docOutput: e.target.value })} placeholder="appends btc_price to json" /></label>
+                  </div>
                   {similar.length > 0 && (
                     <div className="similar">Similar existing — reuse instead of creating?
                       {similar.map((s: any) => <div key={s.key} className="muted">• <b>{s.key}</b> — {s.reasons?.slice(0, 2).join('; ')}</div>)}
@@ -792,6 +807,7 @@ export default function App() {
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <button className="btn primary" onClick={saveCustom}>Save node</button>
                     {editing.status && <span className={`badge dark status-${editing.status}`}>{editing.status}</span>}
+                    {editReuse && <span className="badge reuse" title="Reusability score">♻ {editReuse.score} · {editReuse.grade}</span>}
                     {editing.version > 0 && <small className="muted">v{editing.version} · by {editing.author ?? 'human'}</small>}
                     <button className="btn ghost" onClick={() => setEditing(null)}>Close</button>
                   </div>
@@ -852,9 +868,10 @@ export default function App() {
                         {d.custom && <span className="badge dark">custom</span>}
                         {d.custom && d.trust && <span className={`badge dark status-${d.trust.status}`}>{d.trust.status}</span>}
                         {d.custom && d.trust?.disabled && <span className="badge dark">killed</span>}
+                        {d.custom && d.trust?.reusability && <span className="badge reuse" title="Reusability score">♻ {d.trust.reusability.score} · {d.trust.reusability.grade}</span>}
                         {disabled.includes(d.key) && <span className="badge dark">hidden</span>}
                       </div>
-                      <div className="lib-card-desc">{d.description || <span className="muted">No description.</span>}</div>
+                      <div className="lib-card-desc">{d.trust?.contract ?? d.description ?? <span className="muted">No description.</span>}</div>
                       <div className="lib-card-key muted">{d.key} · v{d.custom && d.trust ? d.trust.version : d.version}{d.custom && d.trust ? ` · by ${d.trust.author}` : ''}</div>
                       <div className="lib-card-actions">
                         <button className="btn ghost" disabled={disabled.includes(d.key) || d.trust?.disabled} onClick={() => { addNode(d); setShowLibrary(false); }}>Add</button>

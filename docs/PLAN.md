@@ -29,6 +29,7 @@
 - [x] Capability sandbox: declared network/kv/files permissions on custom nodes, enforced at runtime
 - [x] Trust ladder (draft/tested/approved) + authorship + versioning with rollback
 - [x] Reuse-before-create: scored node search over catalog + usage (API, MCP, editor suggest)
+- [x] Structured node docs (Action/Target/Output) + reusability rating (static at save, usage on schedule)
 - [x] Blast radius: per-node timeout/item limits, kill switch, trigger gating
 
 ## Next

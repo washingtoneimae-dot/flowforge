@@ -2,6 +2,7 @@ import vm from 'node:vm';
 import type { NodeDefinition, NodeExecuteContext, NodeProperty, FlowItem } from '@flowforge/node-sdk';
 import { db, CustomNodeRow, CustomNodeVersionRow } from './db.js';
 import { createCapabilities, normalizePermissions, NodePermissions, KvStore, EMPTY_PERMISSIONS } from './capabilities.js';
+import { normalizeDocs, computeReusability, DocsTriple, Reusability } from './reusability.js';
 
 export type { NodePermissions };
 export { normalizePermissions };
@@ -95,7 +96,7 @@ export interface CustomNodeInput {
 }
 
 /** Validate a custom-node payload. Throws on the first problem. Returns normalized input. */
-export function validateCustomNode(body: unknown): { key: string; displayName: string; description: string; category: string; properties: NodeProperty[]; code: string; icon: string; permissions: NodePermissions; examples: NodeExample[]; limits: { timeoutMs: number; maxItems: number }; author: string } {
+export function validateCustomNode(body: unknown): { key: string; displayName: string; description: string; category: string; properties: NodeProperty[]; code: string; icon: string; permissions: NodePermissions; examples: NodeExample[]; limits: { timeoutMs: number; maxItems: number }; docs: DocsTriple; author: string } {
   if (!body || typeof body !== 'object') throw new Error('body must be an object');
   const b = body as any;
   const key = String(b.key ?? '');
@@ -130,6 +131,7 @@ export function validateCustomNode(body: unknown): { key: string; displayName: s
     permissions: normalizePermissions(b.permissions),
     examples: normalizeExamples((b as any).examples),
     limits: normalizeLimits((b as any).limits),
+    docs: normalizeDocs((b as any).docs),
     author,
   };
 }
@@ -185,6 +187,61 @@ export function parseRowPermissions(row: CustomNodeRow): NodePermissions {
   catch { return { ...EMPTY_PERMISSIONS }; }
 }
 
+export function parseRowDocs(row: CustomNodeRow): DocsTriple {
+  try { return normalizeDocs(JSON.parse(row.docs ?? '{}')); }
+  catch { return {}; }
+}
+
+export function parseRowReusability(row: CustomNodeRow): Reusability | null {
+  try { return row.reusability ? JSON.parse(row.reusability) : null; }
+  catch { return null; }
+}
+
+/** Usage stats for reusability: workflows referencing each custom key + recent runs. */
+export function usageStats(): Map<string, { workflows: number; recentRuns: number }> {
+  const keyToWfs = new Map<string, Set<string>>();
+  const wfRows = db.prepare('SELECT id, definition FROM workflows').all() as unknown as Array<{ id: string; definition: string }>;
+  for (const w of wfRows) {
+    try {
+      const def = JSON.parse(w.definition);
+      for (const n of def.nodes ?? []) {
+        if (typeof n?.type === 'string') {
+          if (!keyToWfs.has(n.type)) keyToWfs.set(n.type, new Set());
+          keyToWfs.get(n.type)!.add(w.id);
+        }
+      }
+    } catch { /* ignore corrupt definitions */ }
+  }
+  const wfToKeys = new Map<string, string[]>();
+  for (const [key, ids] of keyToWfs) for (const id of ids) {
+    if (!wfToKeys.has(id)) wfToKeys.set(id, []);
+    wfToKeys.get(id)!.push(key);
+  }
+  const since = new Date(Date.now() - 7 * 86400_000).toISOString();
+  const execs = db.prepare('SELECT workflow_id FROM executions WHERE started_at >= ?').all(since) as unknown as Array<{ workflow_id: string }>;
+  const runs = new Map<string, number>();
+  for (const e of execs) {
+    for (const key of wfToKeys.get(e.workflow_id) ?? []) {
+      runs.set(key, (runs.get(key) ?? 0) + 1);
+    }
+  }
+  const out = new Map<string, { workflows: number; recentRuns: number }>();
+  for (const [key, ids] of keyToWfs) {
+    out.set(key, { workflows: ids.size, recentRuns: runs.get(key) ?? 0 });
+  }
+  return out;
+}
+
+/** Recompute reusability for every custom node (scheduled + on workflow change). */
+export function refreshUsageScores(): void {
+  const stats = usageStats();
+  for (const row of listCustomNodeRows()) {
+    const s = stats.get(row.key) ?? { workflows: 0, recentRuns: 0 };
+    const r = computeReusability(row.code, parseRowPermissions(row), parseRowDocs(row), s.workflows, s.recentRuns);
+    db.prepare('UPDATE custom_nodes SET reusability=? WHERE key=?').run(JSON.stringify(r), row.key);
+  }
+}
+
 export function rowToDefinition(row: CustomNodeRow): NodeDefinition {
   let properties: NodeProperty[] = [];
   try {
@@ -231,7 +288,8 @@ export function rowToApi(r: CustomNodeRow) {
     key: r.key, displayName: r.display_name, description: r.description,
     category: r.category, properties: safe(r.properties, []), code: r.code, icon: r.icon ?? '',
     permissions: safe(r.permissions, {}), examples: safe(r.examples, []),
-    limits: safe(r.limits, {}), status: r.status ?? 'draft', author: r.author ?? 'human',
+    limits: safe(r.limits, {}), docs: safe(r.docs, {}), reusability: safe(r.reusability, null),
+    status: r.status ?? 'draft', author: r.author ?? 'human',
     version: r.version ?? 1, disabled: (r.disabled ?? 0) === 1,
     testReport: safe(r.test_report, null),
     created_at: r.created_at, updated_at: r.updated_at,
@@ -241,16 +299,20 @@ export function rowToApi(r: CustomNodeRow) {
 type ValidatedNode = ReturnType<typeof validateCustomNode>;
 
 function contentFingerprint(v: ValidatedNode): string {
-  return JSON.stringify({ code: v.code, properties: v.properties, permissions: v.permissions, examples: v.examples, limits: v.limits });
+  return JSON.stringify({ code: v.code, properties: v.properties, permissions: v.permissions, examples: v.examples, limits: v.limits, docs: v.docs });
 }
 
 function rowFingerprint(r: CustomNodeRow): string {
+  const pick = (raw: string | null, fallback: unknown, norm?: (v: any) => unknown) => {
+    try { const p = JSON.parse(raw ?? ''); return norm ? norm(p) : p; } catch { return fallback; }
+  };
   return JSON.stringify({
     code: r.code,
-    properties: (() => { try { return JSON.parse(r.properties); } catch { return []; } })(),
+    properties: pick(r.properties, []),
     permissions: parseRowPermissions(r),
-    examples: (() => { try { return JSON.parse(r.examples); } catch { return []; } })(),
-    limits: (() => { try { return normalizeLimits(JSON.parse(r.limits)); } catch { return normalizeLimits(undefined); } })(),
+    examples: pick(r.examples, []),
+    limits: pick(r.limits, {}, (p) => normalizeLimits(p)),
+    docs: pick(r.docs, {}, (p) => normalizeDocs(p)),
   });
 }
 
@@ -277,18 +339,21 @@ export async function saveCustomNode(v: ValidatedNode): Promise<SaveResult> {
   const version = (existing?.version ?? 0) + 1;
   const report = await runExamples(v.code, v.examples, { nodeKey: v.key, permissions: v.permissions });
   const status: TrustStatus = v.examples.length > 0 && report.every((r) => r.ok) ? 'tested' : 'draft';
+  const stats = usageStats().get(v.key) ?? { workflows: 0, recentRuns: 0 };
+  const reusability = computeReusability(v.code, v.permissions, v.docs, stats.workflows, stats.recentRuns);
   db.prepare(`INSERT OR REPLACE INTO custom_nodes
-    (key,display_name,description,category,properties,code,icon,permissions,examples,limits,status,author,version,test_report,disabled,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE((SELECT created_at FROM custom_nodes WHERE key=?),?),?)`)
+    (key,display_name,description,category,properties,code,icon,permissions,examples,limits,docs,reusability,status,author,version,test_report,disabled,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE((SELECT created_at FROM custom_nodes WHERE key=?),?),?)`)
     .run(v.key, v.displayName, v.description, v.category, JSON.stringify(v.properties), v.code, v.icon,
-      JSON.stringify(v.permissions), JSON.stringify(v.examples), JSON.stringify(v.limits),
+      JSON.stringify(v.permissions), JSON.stringify(v.examples), JSON.stringify(v.limits), JSON.stringify(v.docs),
+      JSON.stringify(reusability),
       status, v.author, version, report.length ? JSON.stringify(report) : null,
       existing?.disabled ?? 0, v.key, existing?.created_at ?? now, now);
   db.prepare(`INSERT INTO custom_node_versions
-    (key,version,display_name,description,category,properties,code,icon,permissions,examples,limits,status,author,test_report,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    (key,version,display_name,description,category,properties,code,icon,permissions,examples,limits,docs,status,author,test_report,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(v.key, version, v.displayName, v.description, v.category, JSON.stringify(v.properties), v.code, v.icon,
-      JSON.stringify(v.permissions), JSON.stringify(v.examples), JSON.stringify(v.limits),
+      JSON.stringify(v.permissions), JSON.stringify(v.examples), JSON.stringify(v.limits), JSON.stringify(v.docs),
       status, v.author, report.length ? JSON.stringify(report) : null, now);
   return { key: v.key, version, status, report: report.length ? report : null };
 }
@@ -308,6 +373,7 @@ export async function rollbackCustomNode(key: string, version: number, author: s
     permissions: JSON.parse(snap.permissions),
     examples: JSON.parse(snap.examples),
     limits: JSON.parse(snap.limits),
+    docs: (() => { try { return JSON.parse((snap as any).docs ?? '{}'); } catch { return {}; } })(),
     author,
   }));
 }

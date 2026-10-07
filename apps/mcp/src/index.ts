@@ -186,7 +186,7 @@ tool(
 
 tool(
   'create_custom_node',
-  'Author a new action node. Code runs sandboxed with `items` and `params` in scope; return items or `{ branches }`. Usable in workflows immediately under `key`.',
+  'Author a new action node. Call find_node first — only create when nothing fits. Code runs sandboxed with `items` and `params` in scope; return items or `{ branches }`. Saves as draft until examples pass (tested), needs human approval for automatic runs. Fill the docs triple so agents can reuse it.',
   {
     key: z.string().describe('Letters/digits/_ only, must not clash with a built-in'),
     displayName: z.string(),
@@ -195,6 +195,11 @@ tool(
     properties: z.array(z.any()).optional().describe('Inspector fields: [{ key, displayName, type, default, required }]'),
     code: z.string().describe('JavaScript body, e.g. "return items.map(i => ({ json: i.json }));"'),
     icon: z.string().optional().describe('Emoji or data:image/... URL shown left of the node'),
+    docs: z.object({
+      action: z.string().optional().describe('Action verb phrase, e.g. "Fetches price of"'),
+      target: z.string().optional().describe('Target, e.g. "Bitcoin (CoinGecko)"'),
+      output: z.string().optional().describe('Output shape, e.g. "appends btc_price to json"'),
+    }).optional().describe('Structured description triple — prefer this over free text. Boosts reuse + search.'),
     permissions: z.object({
       network: z.array(z.string()).optional().describe('Allowlisted hosts, e.g. ["api.example.com"] (code gets fetch)'),
       kv: z.boolean().optional().describe('Private key/value store (code gets kv)'),
@@ -207,8 +212,8 @@ tool(
     }).optional().describe('Blast-radius caps.'),
     author: z.string().optional().describe('Provenance label, e.g. agent name (default "mcp")'),
   },
-  async ({ key, displayName, description, category, properties, code, icon, permissions, examples, limits, author }) =>
-    text(await ff('/api/custom-nodes', 'POST', { key, displayName, description: description ?? '', category: category ?? 'custom', properties: properties ?? [], code, icon: icon ?? '', permissions: permissions ?? {}, examples: examples ?? [], limits: limits ?? {}, author: author ?? 'mcp' })),
+  async ({ key, displayName, description, category, properties, code, icon, docs, permissions, examples, limits, author }) =>
+    text(await ff('/api/custom-nodes', 'POST', { key, displayName, description: description ?? '', category: category ?? 'custom', properties: properties ?? [], code, icon: icon ?? '', docs: docs ?? {}, permissions: permissions ?? {}, examples: examples ?? [], limits: limits ?? {}, author: author ?? 'mcp' })),
 );
 
 tool(

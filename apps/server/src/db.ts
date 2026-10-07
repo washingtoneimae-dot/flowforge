@@ -54,6 +54,12 @@ for (const col of [
 ]) {
   try { db.exec(`ALTER TABLE custom_nodes ADD COLUMN ${col}`); } catch { /* exists */ }
 }
+for (const col of [
+  `docs TEXT NOT NULL DEFAULT '{}'`,
+  `reusability TEXT`,
+]) {
+  try { db.exec(`ALTER TABLE custom_nodes ADD COLUMN ${col}`); } catch { /* exists */ }
+}
 db.exec(`
 CREATE TABLE IF NOT EXISTS custom_node_versions (
   key TEXT NOT NULL,
@@ -67,6 +73,7 @@ CREATE TABLE IF NOT EXISTS custom_node_versions (
   permissions TEXT NOT NULL DEFAULT '{}',
   examples TEXT NOT NULL DEFAULT '[]',
   limits TEXT NOT NULL DEFAULT '{}',
+  docs TEXT NOT NULL DEFAULT '{}',
   status TEXT NOT NULL DEFAULT 'draft',
   author TEXT NOT NULL DEFAULT 'human',
   test_report TEXT,
@@ -81,7 +88,11 @@ CREATE TABLE IF NOT EXISTS custom_kv (
   PRIMARY KEY (node_key, k)
 );`);
 
+try {
+  db.exec(`ALTER TABLE custom_node_versions ADD COLUMN docs TEXT NOT NULL DEFAULT '{}'`);
+} catch { /* column already exists */ }
+
 export interface WorkflowRow { id: string; name: string; definition: string; active: number; created_at: string; updated_at: string; }
 export interface ExecutionRow { id: string; workflow_id: string; status: string; result: string; started_at: string; finished_at: string; }
-export interface CustomNodeRow { key: string; display_name: string; description: string; category: string; properties: string; code: string; icon: string; permissions: string; status: string; author: string; version: number; examples: string; test_report: string | null; limits: string; disabled: number; created_at: string; updated_at: string; }
-export interface CustomNodeVersionRow { key: string; version: number; display_name: string; description: string; category: string; properties: string; code: string; icon: string; permissions: string; examples: string; limits: string; status: string; author: string; test_report: string | null; created_at: string; }
+export interface CustomNodeRow { key: string; display_name: string; description: string; category: string; properties: string; code: string; icon: string; permissions: string; status: string; author: string; version: number; examples: string; test_report: string | null; limits: string; disabled: number; docs: string; reusability: string | null; created_at: string; updated_at: string; }
+export interface CustomNodeVersionRow { key: string; version: number; display_name: string; description: string; category: string; properties: string; code: string; icon: string; permissions: string; examples: string; limits: string; docs: string; status: string; author: string; test_report: string | null; created_at: string; }

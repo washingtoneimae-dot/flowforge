@@ -1,8 +1,9 @@
 import express from 'express';
 import { db, WorkflowRow, ExecutionRow } from './db.js';
 import { nodeRegistry, resolveNode, isCustomNode, categoryOf, refreshCustomNodes } from './registry.js';
-import { validateCustomNode, runCustomCode, listCustomNodeRows, normalizePermissions, parseRowPermissions, saveCustomNode, rollbackCustomNode, approveCustomNode, setCustomNodeEnabled, checkCustomTrust, rowToApi, getCustomNodeRow } from './customNodes.js';
+import { validateCustomNode, runCustomCode, listCustomNodeRows, normalizePermissions, parseRowPermissions, parseRowDocs, saveCustomNode, rollbackCustomNode, approveCustomNode, setCustomNodeEnabled, checkCustomTrust, rowToApi, getCustomNodeRow, refreshUsageScores } from './customNodes.js';
 import { searchNodes, workflowUsage } from './nodeSearch.js';
+import { contractLine } from './reusability.js';
 import { loadMcpConfig, saveMcpConfig, mcpDistExists, MCP_TOOL_NAMES } from '@flowforge/node-sdk';
 import { toExportDoc, parseImportDoc } from './workflowIo.js';
 import { executeWorkflow, Workflow } from '@flowforge/engine';
@@ -52,7 +53,18 @@ app.get('/api/nodes', (_req, res) => {
     key: n.key, displayName: n.displayName, description: n.description,
     kind: n.kind, icon: n.icon, version: n.version, category: categoryOf(n),
     custom: isCustomNode(n.key),
-    trust: isCustomNode(n.key) ? (() => { const r = getCustomNodeRow(n.key); return r ? { status: r.status ?? 'draft', author: r.author ?? 'human', version: r.version ?? 1, disabled: (r.disabled ?? 0) === 1 } : undefined; })() : undefined,
+    trust: isCustomNode(n.key) ? (() => {
+      const r = getCustomNodeRow(n.key);
+      if (!r) return undefined;
+      let reuse: any = null;
+      try { reuse = r.reusability ? JSON.parse(r.reusability) : null; } catch { /* ignore */ }
+      return {
+        status: r.status ?? 'draft', author: r.author ?? 'human', version: r.version ?? 1,
+        disabled: (r.disabled ?? 0) === 1,
+        contract: contractLine(parseRowDocs(r)) || undefined,
+        reusability: reuse ? { score: reuse.score, grade: reuse.grade } : undefined,
+      };
+    })() : undefined,
     inputs: n.inputs, outputs: n.outputs, properties: n.properties,
   })));
 });
@@ -65,7 +77,21 @@ app.get('/api/nodes/search', (req, res) => {
   const catalog = [...nodeRegistry.values()]
     .filter((n) => !kind || n.kind === kind)
     .filter((n) => !category || categoryOf(n) === category)
-    .map((n) => ({ key: n.key, displayName: n.displayName, description: n.description ?? '', category: categoryOf(n), kind: n.kind, custom: isCustomNode(n.key) }));
+    .map((n) => {
+      const base = { key: n.key, displayName: n.displayName, description: n.description ?? '', category: categoryOf(n), kind: n.kind, custom: isCustomNode(n.key) };
+      if (!isCustomNode(n.key)) return base;
+      const row = getCustomNodeRow(n.key);
+      if (!row) return base;
+      const docs = parseRowDocs(row);
+      let reuse: any = null;
+      try { reuse = row.reusability ? JSON.parse(row.reusability) : null; } catch { /* ignore */ }
+      return {
+        ...base,
+        contract: contractLine(docs) || undefined,
+        reuseScore: typeof reuse?.score === 'number' ? reuse.score : undefined,
+        reuseGrade: typeof reuse?.grade === 'string' ? reuse.grade : undefined,
+      };
+    });
   const rows = db.prepare('SELECT definition FROM workflows').all() as unknown as Array<{ definition: string }>;
   const defs = rows.map((r) => { try { return JSON.parse(r.definition); } catch { return { nodes: [] }; } });
   res.json(searchNodes(q, catalog, workflowUsage(defs), limit));
@@ -202,6 +228,13 @@ app.get('/api/workflows/:id', (req, res) => {
   res.json({ ...row, definition: JSON.parse(row.definition) });
 });
 
+// Reusability usage scores: refreshed on workflow changes + every 5 minutes,
+// since execution data moves independently of node saves.
+function queueUsageRefresh() {
+  try { refreshUsageScores(); } catch (err) { console.warn('[reusability] refresh failed:', (err as Error).message); }
+}
+setInterval(queueUsageRefresh, 5 * 60_000).unref();
+
 app.post('/api/workflows', (req, res) => {
   const name = req.body?.name ?? 'Untitled workflow';
   const definition = req.body?.definition ?? { nodes: [], edges: [] };
@@ -209,6 +242,7 @@ app.post('/api/workflows', (req, res) => {
   const wfId = id();
   db.prepare('INSERT INTO workflows (id,name,definition,active,created_at,updated_at) VALUES (?,?,?,1,?,?)')
     .run(wfId, name, JSON.stringify(definition), now, now);
+  queueUsageRefresh();
   res.status(201).json({ id: wfId, name, definition, active: 1, created_at: now, updated_at: now });
 });
 
@@ -221,11 +255,13 @@ app.put('/api/workflows/:id', (req, res) => {
   const now = new Date().toISOString();
   db.prepare('UPDATE workflows SET name=?,definition=?,active=?,updated_at=? WHERE id=?')
     .run(name, JSON.stringify(definition), active, now, req.params.id);
+  queueUsageRefresh();
   res.json({ id: req.params.id, name, definition, active, updated_at: now });
 });
 
 app.delete('/api/workflows/:id', (req, res) => {
   db.prepare('DELETE FROM workflows WHERE id=?').run(req.params.id);
+  queueUsageRefresh();
   res.json({ ok: true });
 });
 

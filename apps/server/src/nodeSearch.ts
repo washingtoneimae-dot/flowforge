@@ -7,6 +7,11 @@ export interface CatalogNode {
   category: string;
   kind: string;
   custom: boolean;
+  /** Structured Action/Target/Output contract line, when the author wrote one. */
+  contract?: string;
+  /** Reusability score 0–100 + grade, when rated. */
+  reuseScore?: number;
+  reuseGrade?: string;
 }
 
 export interface ScoredNode extends CatalogNode {
@@ -24,6 +29,7 @@ export function scoreNode(query: string, node: CatalogNode, usage: number): Scor
   const desc = (node.description ?? '').toLowerCase();
   const key = node.key.toLowerCase();
   const cat = (node.category ?? '').toLowerCase();
+  const contract = (node.contract ?? '').toLowerCase();
   let score = 0;
   const reasons: string[] = [];
   for (const q of qs) {
@@ -32,7 +38,15 @@ export function scoreNode(query: string, node: CatalogNode, usage: number): Scor
     if (name.split(/[^a-z0-9]+/).includes(q)) { score += 5; reasons.push(`name matches "${q}"`); }
     else if (name.includes(q)) { score += 3; reasons.push(`name contains "${q}"`); }
     if (desc.includes(q)) { score += 2; reasons.push(`description mentions "${q}"`); }
+    if (contract.includes(q)) { score += 2; reasons.push(`contract mentions "${q}"`); }
     if (cat === q) { score += 2; reasons.push(`category "${q}"`); }
+  }
+  if (score > 0 && typeof node.reuseScore === 'number') {
+    const boost = Math.round(Math.min(5, node.reuseScore / 20));
+    if (boost > 0) {
+      score += boost;
+      reasons.push(`reusability ${node.reuseScore}${node.reuseGrade ? ` (${node.reuseGrade})` : ''}`);
+    }
   }
   const useBonus = Math.min(usage, 5);
   if (useBonus > 0 && score > 0) {

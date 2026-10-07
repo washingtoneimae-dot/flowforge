@@ -242,6 +242,24 @@ node), with reasons per hit — so agents (and the Library editor's
 auto-suggest) reach for existing nodes instead of minting the eleventh
 `upperCase` variant.
 
+Two structures keep the library from becoming a single-use-script graveyard:
+
+- **Structured docs** — every custom node can carry an Action + Target +
+  Output-shape triple (`Fetches price of Bitcoin (CoinGecko) → appends
+  btc_price to json`), shown on its card and fed to search + MCP
+  `describe_node`. Free text stays, but the triple is what routers read.
+- **Reusability rating** — a 0–100 score + A–F badge (`♻ 92 · A`) combining
+  static analysis with live data:
+  - *Configurability* (30): `params.*` usage rewarded, hardcoded URLs docked
+  - *Permission footprint* (25): least privilege wins, wildcards cost double
+  - *Composability* (25): spread-preserving maps and branches rewarded,
+    destructive literals docked
+  - *Documentation* (5): full triple bonus
+  - *Usage* (15): workflows using the node + recent runs
+  - Static analysis runs at **save-time**; usage is refreshed by a **5-minute
+    scheduler** (and on every workflow save/delete), since execution data
+    moves independently of saves. `find_node` boosts high-reuse matches.
+
 ## Blast-radius controls
 
 - **Per-node limits** on every custom node: `timeoutMs` (1–30s) and
