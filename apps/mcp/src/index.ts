@@ -89,6 +89,23 @@ tool(
 );
 
 tool(
+  'find_node',
+  'Reuse-before-create: find existing nodes matching a plain-language need ("send a slack message", "turn json into rows"). Scored by name/description/category plus real usage across workflows. Call this before create_custom_node.',
+  {
+    query: z.string().describe('What the node should do, in plain words'),
+    kind: z.string().optional().describe('Filter: trigger or action'),
+    category: z.string().optional(),
+    limit: z.number().int().min(1).max(25).optional().describe('Max results (default 8)'),
+  },
+  async ({ query, kind, category, limit }) => {
+    const p = new URLSearchParams({ q: query, limit: String(limit ?? 8) });
+    if (kind) p.set('kind', kind);
+    if (category) p.set('category', category);
+    return text(await ff(`/api/nodes/search?${p}`));
+  },
+);
+
+tool(
   'list_workflows',
   'List stored workflows (id, name, active flag).',
   {},
@@ -183,9 +200,15 @@ tool(
       kv: z.boolean().optional().describe('Private key/value store (code gets kv)'),
       files: z.boolean().optional().describe('Scoped files under data/custom/<key>/ (code gets files)'),
     }).optional().describe('Capabilities granted to the code. Default: none.'),
+    examples: z.array(z.any()).optional().describe('Self-test cases: [{ name?, params?, items? }]. All must pass for status "tested".'),
+    limits: z.object({
+      timeoutMs: z.number().optional().describe('Per-run cap in ms, 1000–30000 (default 10000)'),
+      maxItems: z.number().optional().describe('Max output items, 1–10000 (default 10000)'),
+    }).optional().describe('Blast-radius caps.'),
+    author: z.string().optional().describe('Provenance label, e.g. agent name (default "mcp")'),
   },
-  async ({ key, displayName, description, category, properties, code, icon, permissions }) =>
-    text(await ff('/api/custom-nodes', 'POST', { key, displayName, description: description ?? '', category: category ?? 'custom', properties: properties ?? [], code, icon: icon ?? '', permissions: permissions ?? {} })),
+  async ({ key, displayName, description, category, properties, code, icon, permissions, examples, limits, author }) =>
+    text(await ff('/api/custom-nodes', 'POST', { key, displayName, description: description ?? '', category: category ?? 'custom', properties: properties ?? [], code, icon: icon ?? '', permissions: permissions ?? {}, examples: examples ?? [], limits: limits ?? {}, author: author ?? 'mcp' })),
 );
 
 tool(
@@ -193,6 +216,27 @@ tool(
   'Delete a UI-created custom node.',
   { key: z.string() },
   async ({ key }) => text(await ff(`/api/custom-nodes/${key}`, 'DELETE')),
+);
+
+tool(
+  'rollback_custom_node',
+  'Roll back a custom node to a previous version (content is re-tested on the way in). List versions via the Library UI or GET /api/custom-nodes/:key/versions.',
+  {
+    key: z.string(),
+    version: z.number().int().describe('Version number to restore'),
+    author: z.string().optional().describe('Provenance label (default "mcp")'),
+  },
+  async ({ key, version, author }) => text(await ff(`/api/custom-nodes/${key}/rollback`, 'POST', { version, author: author ?? 'mcp' })),
+);
+
+tool(
+  'set_custom_node_enabled',
+  'Kill switch: disable a misbehaving custom node (workflows using it refuse to run until re-enabled) or re-enable it.',
+  {
+    key: z.string(),
+    enabled: z.boolean().describe('false disables, true re-enables'),
+  },
+  async ({ key, enabled }) => text(await ff(`/api/custom-nodes/${key}/enable`, 'POST', { enabled })),
 );
 
 tool(

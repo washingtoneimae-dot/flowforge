@@ -139,6 +139,9 @@ export default function App() {
   const [editing, setEditing] = useState<any | null>(null); // custom node draft
   const [editError, setEditError] = useState<string | null>(null);
   const [editTestResult, setEditTestResult] = useState<any>(null);
+  const [editSaveResult, setEditSaveResult] = useState<any>(null);
+  const [editVersions, setEditVersions] = useState<any[]>([]);
+  const [similar, setSimilar] = useState<any[]>([]);
   const [customTestInput, setCustomTestInput] = useState('[{"json":{}}]');
 
   // settings / MCP setup
@@ -178,7 +181,7 @@ export default function App() {
 
   const onConnect = useCallback((c: Connection) => setEdges((eds) => addEdge({ ...c, type: 'deletable', sourceHandle: c.sourceHandle ?? '0' }, eds)), [setEdges]);
 
-  const enabledDefs = useMemo(() => nodeDefs.filter((d) => !disabled.includes(d.key)), [nodeDefs, disabled]);
+  const enabledDefs = useMemo(() => nodeDefs.filter((d) => !disabled.includes(d.key) && !d.trust?.disabled), [nodeDefs, disabled]);
 
   const paletteGroups = useMemo(() => {
     const groups = new Map<string, any[]>();
@@ -293,6 +296,10 @@ export default function App() {
     const id = currentId ?? (await api('/api/workflows')).find((w: any) => w.name === name)?.id;
     if (!id) return;
     const r = await api(`/api/workflows/${id}/run`, { method: 'POST', body: '{}' });
+    if (r.error) {
+      setRunResult({ status: 'blocked', error: r.error, results: [] });
+      return;
+    }
     setRunResult(r);
     const statusByNode: Record<string, string> = {};
     for (const nr of r.results ?? []) statusByNode[nr.nodeId] = nr.status;
@@ -393,18 +400,23 @@ export default function App() {
 
   const TOOL_BLURBS: Record<string, string> = {
     list_nodes: 'Browse the node catalog', describe_node: 'Read a node’s parameter schema',
+    find_node: 'Plain-language node search',
     list_workflows: 'List workflows', get_workflow: 'Read a workflow definition',
     create_workflow: 'Create workflows', update_workflow: 'Edit workflows', delete_workflow: 'Delete workflows',
     run_workflow: 'Execute workflows', test_node: 'Run a single node',
     create_custom_node: 'Author new nodes', delete_custom_node: 'Delete custom nodes',
+    rollback_custom_node: 'Restore a prior version', set_custom_node_enabled: 'Kill switch',
     export_workflow: 'Export workflow JSON', import_workflow: 'Import workflow JSON',
     list_executions: 'Read run history',
   };
 
   const openNewCustom = () => {
-    setEditing({ key: '', displayName: '', description: '', category: 'custom', icon: '', permHosts: '', permKv: false, permFiles: false, properties: '[]', code: '// items: [{ json }], params: your fields\nreturn items.map(i => ({ json: { ...i.json } }));' });
+    setEditing({ key: '', displayName: '', description: '', category: 'custom', icon: '', permHosts: '', permKv: false, permFiles: false, limTimeout: 10000, limMax: 10000, examplesText: '[]', properties: '[]', code: '// items: [{ json }], params: your fields\nreturn items.map(i => ({ json: { ...i.json } }));' });
     setEditError(null);
     setEditTestResult(null);
+    setEditSaveResult(null);
+    setEditVersions([]);
+    setSimilar([]);
     setCustomTestInput('[{"json":{}}]');
   };
 
@@ -413,10 +425,15 @@ export default function App() {
     const row = rows.find((r) => r.key === key);
     if (!row) return;
     const perms = row.permissions && typeof row.permissions === 'object' ? row.permissions : {};
-    setEditing({ ...row, properties: JSON.stringify(row.properties ?? [], null, 2), permHosts: (perms.network ?? []).join('\n'), permKv: !!perms.kv, permFiles: !!perms.files });
+    const lims = row.limits && typeof row.limits === 'object' ? row.limits : {};
+    setEditing({ ...row, properties: JSON.stringify(row.properties ?? [], null, 2), permHosts: (perms.network ?? []).join('\n'), permKv: !!perms.kv, permFiles: !!perms.files, limTimeout: lims.timeoutMs ?? 10000, limMax: lims.maxItems ?? 10000, examplesText: JSON.stringify(row.examples ?? [], null, 2) });
     setEditError(null);
     setEditTestResult(null);
+    setEditSaveResult(null);
     setCustomTestInput('[{"json":{}}]');
+    const vers: any[] = await api(`/api/custom-nodes/${key}/versions`);
+    setEditVersions(vers);
+    setSimilar([]);
   };
 
   const editingPermissions = () => ({
@@ -427,18 +444,52 @@ export default function App() {
 
   const saveCustom = async () => {
     setEditError(null);
+    setEditSaveResult(null);
     let properties: any = [];
     try {
       properties = editing.properties.trim() ? JSON.parse(editing.properties) : [];
       if (!Array.isArray(properties)) throw new Error('properties must be an array');
     } catch (e) { setEditError(`Bad properties JSON: ${(e as Error).message}`); return; }
+    let examples: any = [];
+    try {
+      examples = editing.examplesText.trim() ? JSON.parse(editing.examplesText) : [];
+      if (!Array.isArray(examples)) throw new Error('examples must be an array');
+    } catch (e) { setEditError(`Bad examples JSON: ${(e as Error).message}`); return; }
     const r = await api('/api/custom-nodes', {
       method: 'POST',
-      body: JSON.stringify({ key: editing.key, displayName: editing.displayName, description: editing.description, category: editing.category || 'custom', icon: editing.icon || '', permissions: editingPermissions(), properties, code: editing.code }),
+      body: JSON.stringify({ key: editing.key, displayName: editing.displayName, description: editing.description, category: editing.category || 'custom', icon: editing.icon || '', permissions: editingPermissions(), examples, limits: { timeoutMs: Number(editing.limTimeout) || 10000, maxItems: Number(editing.limMax) || 10000 }, author: 'human', properties, code: editing.code }),
     });
     if (r.error) { setEditError(r.error); return; }
+    setEditSaveResult(r);
     await refreshNodes();
-    setEditing(null);
+    if (editing.key) {
+      const vers: any[] = await api(`/api/custom-nodes/${editing.key}/versions`);
+      setEditVersions(vers);
+      const rows: any[] = await api('/api/custom-nodes');
+      const row = rows.find((x) => x.key === editing.key);
+      if (row) setEditing((ed: any) => ({ ...ed, status: row.status, author: row.author, version: row.version }));
+    }
+  };
+
+  const approveCustom = async () => {
+    setEditError(null);
+    const r = await api(`/api/custom-nodes/${editing.key}/approve`, { method: 'POST', body: JSON.stringify({ by: 'human' }) });
+    if (r.error) { setEditError(r.error); return; }
+    setEditing((ed: any) => ({ ...ed, status: 'approved' }));
+    await refreshNodes();
+  };
+
+  const rollbackCustom = async (version: number) => {
+    if (!confirm(`Roll back "${editing.key}" to v${version}? Current code becomes a newer version.`)) return;
+    const r = await api(`/api/custom-nodes/${editing.key}/rollback`, { method: 'POST', body: JSON.stringify({ version, author: 'human' }) });
+    if (r.error) { setEditError(r.error); return; }
+    await openEditCustom(editing.key);
+    await refreshNodes();
+  };
+
+  const toggleCustomEnabled = async (key: string, enabled: boolean) => {
+    await api(`/api/custom-nodes/${key}/enable`, { method: 'POST', body: JSON.stringify({ enabled }) });
+    await refreshNodes();
   };
 
   const deleteCustom = async (key: string) => {
@@ -469,6 +520,20 @@ export default function App() {
       alert(`Node import failed: ${(e as Error).message}`);
     }
   };
+
+  // Reuse-before-create: suggest similar existing nodes while naming a new one.
+  useEffect(() => {
+    if (!editing || !showLibrary) return;
+    const q = `${editing.displayName ?? ''} ${editing.description ?? ''}`.trim();
+    if (q.length < 4) { setSimilar([]); return; }
+    const t = setTimeout(async () => {
+      try {
+        const r = await api(`/api/nodes/search?${new URLSearchParams({ q, limit: '4' })}`);
+        setSimilar((r ?? []).filter((n: any) => n.key !== editing.key));
+      } catch { /* ignore */ }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [editing?.displayName, editing?.description, showLibrary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const testCustomDraft = async () => {
     setEditTestResult(null);
@@ -589,6 +654,10 @@ export default function App() {
           {runResult && (
             <>
               <h3 style={{ marginTop: 20 }}>Last run — {runResult.status}</h3>
+              {runResult.error && <div className="error">{runResult.error}</div>}
+              {runResult.trust?.testedUnapproved?.length > 0 && (
+                <div className="desc">Unapproved nodes ran (manual only): {runResult.trust.testedUnapproved.join(', ')}</div>
+              )}
               <pre className="run">{JSON.stringify(runResult.results?.map((r: any) => ({ node: r.nodeId, status: r.status, error: r.error, items: r.items?.length })), null, 2)}</pre>
             </>
           )}
@@ -672,6 +741,11 @@ export default function App() {
                     <input value={editing.displayName} onChange={(e) => setEditing({ ...editing, displayName: e.target.value })} placeholder="My Node" /></label>
                   <label className="field"><span>Description</span>
                     <input value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} placeholder="What it does" /></label>
+                  {similar.length > 0 && (
+                    <div className="similar">Similar existing — reuse instead of creating?
+                      {similar.map((s: any) => <div key={s.key} className="muted">• <b>{s.key}</b> — {s.reasons?.slice(0, 2).join('; ')}</div>)}
+                    </div>
+                  )}
                   <label className="field"><span>Category</span>
                     <input value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })} placeholder="custom" /></label>
                   <label className="field"><span>Icon — emoji, or upload a picture (shown left of the node)</span>
@@ -703,11 +777,49 @@ export default function App() {
                     <label className="check"><input type="checkbox" checked={!!editing.permKv} onChange={(e) => setEditing({ ...editing, permKv: e.target.checked })} /> Key-value store (<code>kv.get/set/del/getJson/setJson</code>, private to this node)</label>
                     <label className="check"><input type="checkbox" checked={!!editing.permFiles} onChange={(e) => setEditing({ ...editing, permFiles: e.target.checked })} /> Files (<code>files.read/write/list/del</code> under <code>data/custom/{editing.key || '<key>'}/</code>)</label>
                   </div>
-                  {editError && <div className="error">{editError}</div>}
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn primary" onClick={saveCustom}>Save node</button>
-                    <button className="btn ghost" onClick={() => setEditing(null)}>Cancel</button>
+                  <div className="field"><span>Blast-radius limits</span>
+                    <div className="row">
+                      <label className="field"><span>Timeout (ms, 1000–30000)</span>
+                        <input type="number" value={editing.limTimeout ?? 10000} onChange={(e) => setEditing({ ...editing, limTimeout: e.target.value })} /></label>
+                      <label className="field"><span>Max output items (1–10000)</span>
+                        <input type="number" value={editing.limMax ?? 10000} onChange={(e) => setEditing({ ...editing, limMax: e.target.value })} /></label>
+                    </div>
                   </div>
+                  <label className="field"><span>Self-test examples — all must pass for status “tested” (pass = runs without error)</span>
+                    <textarea rows={4} value={editing.examplesText ?? '[]'} onChange={(e) => setEditing({ ...editing, examplesText: e.target.value })}
+                      placeholder='[{"name":"basic","params":{},"items":[{"json":{}}]}]' style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11 }} /></label>
+                  {editError && <div className="error">{editError}</div>}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <button className="btn primary" onClick={saveCustom}>Save node</button>
+                    {editing.status && <span className={`badge dark status-${editing.status}`}>{editing.status}</span>}
+                    {editing.version > 0 && <small className="muted">v{editing.version} · by {editing.author ?? 'human'}</small>}
+                    <button className="btn ghost" onClick={() => setEditing(null)}>Close</button>
+                  </div>
+                  {editing.status === 'tested' && (
+                    <div style={{ marginTop: 8 }}>
+                      <button className="btn" onClick={approveCustom}>Approve for automatic runs</button>
+                    </div>
+                  )}
+                  {editSaveResult && (
+                    <div className="save-report">
+                      Saved v{editSaveResult.version} → <b>{editSaveResult.status}</b>
+                      {(editSaveResult.report ?? []).map((r: any, i: number) => (
+                        <div key={i} className="muted">• {r.name}: {r.ok ? `ok (${r.items} items)` : `FAIL — ${r.error}`}</div>
+                      ))}
+                      {editSaveResult.status === 'draft' && <div className="muted">Add passing examples to reach “tested”.</div>}
+                    </div>
+                  )}
+                  {editVersions.length > 0 && (
+                    <>
+                      <h3 style={{ marginTop: 16 }}>History</h3>
+                      {editVersions.map((v: any) => (
+                        <div key={v.version} className="version-row">
+                          <span>v{v.version} · {v.status} · {v.author} · {String(v.created_at ?? '').slice(0, 16).replace('T', ' ')}</span>
+                          <button className="btn ghost" onClick={() => rollbackCustom(v.version)}>Roll back</button>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
                 <div className="editor-code">
                   <label className="field"><span>Code — <code>items</code> and <code>params</code> are in scope. Return items or <code>{'{ branches }'}</code>.</span>
@@ -738,16 +850,19 @@ export default function App() {
                         <span className="badge">{d.kind}</span>
                         <span className="badge">{d.category ?? 'other'}</span>
                         {d.custom && <span className="badge dark">custom</span>}
-                        {disabled.includes(d.key) && <span className="badge dark">disabled</span>}
+                        {d.custom && d.trust && <span className={`badge dark status-${d.trust.status}`}>{d.trust.status}</span>}
+                        {d.custom && d.trust?.disabled && <span className="badge dark">killed</span>}
+                        {disabled.includes(d.key) && <span className="badge dark">hidden</span>}
                       </div>
                       <div className="lib-card-desc">{d.description || <span className="muted">No description.</span>}</div>
-                      <div className="lib-card-key muted">{d.key} · v{d.version}</div>
+                      <div className="lib-card-key muted">{d.key} · v{d.custom && d.trust ? d.trust.version : d.version}{d.custom && d.trust ? ` · by ${d.trust.author}` : ''}</div>
                       <div className="lib-card-actions">
-                        <button className="btn ghost" disabled={disabled.includes(d.key)} onClick={() => { addNode(d); setShowLibrary(false); }}>Add</button>
-                        <button className="btn ghost" onClick={() => toggleDisabled(d.key)}>{disabled.includes(d.key) ? 'Enable' : 'Disable'}</button>
+                        <button className="btn ghost" disabled={disabled.includes(d.key) || d.trust?.disabled} onClick={() => { addNode(d); setShowLibrary(false); }}>Add</button>
+                        <button className="btn ghost" onClick={() => toggleDisabled(d.key)}>{disabled.includes(d.key) ? 'Show' : 'Hide'}</button>
                         {d.custom && <>
                           <button className="btn ghost" onClick={() => openEditCustom(d.key)}>Edit</button>
                           <button className="btn ghost" onClick={() => exportCustom(d.key)}>Export</button>
+                          <button className="btn ghost" onClick={() => toggleCustomEnabled(d.key, !!d.trust?.disabled)}>{d.trust?.disabled ? 'Re-enable' : 'Kill'}</button>
                           <button className="btn ghost" onClick={() => deleteCustom(d.key)}>Delete</button>
                         </>}
                       </div>

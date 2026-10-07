@@ -3,10 +3,10 @@ import { join, dirname } from 'node:path';
 
 /** Canonical MCP tool names. The settings page validates against this list. */
 export const MCP_TOOL_NAMES = [
-  'list_nodes', 'describe_node',
+  'list_nodes', 'describe_node', 'find_node',
   'list_workflows', 'get_workflow', 'create_workflow', 'update_workflow', 'delete_workflow',
   'run_workflow', 'test_node',
-  'create_custom_node', 'delete_custom_node',
+  'create_custom_node', 'delete_custom_node', 'rollback_custom_node', 'set_custom_node_enabled',
   'export_workflow', 'import_workflow', 'list_executions',
 ];
 

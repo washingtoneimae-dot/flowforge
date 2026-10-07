@@ -112,6 +112,13 @@ pre.snippet { background: #111; color: #eee; border-radius: 8px; padding: 12px; 
 .tool-check { display: flex; gap: 8px; align-items: flex-start; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; cursor: pointer; }
 .tool-check.off { opacity: 0.55; }
 .tool-check b { font-family: ui-monospace, monospace; font-size: 11px; }
+.badge.status-draft { border-style: dashed; }
+.badge.status-tested { background: #fff; color: #111; }
+.badge.status-approved { background: #111; color: #fff; }
+.similar { background: #fff; border: 1px dashed var(--line-2); border-radius: 8px; padding: 8px 10px; font-size: 11px; margin-bottom: 12px; }
+.save-report { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; margin-top: 8px; }
+.version-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.version-row .btn { padding: 2px 8px; font-size: 10px; }
 
 /* custom node editor */
 .editor { display: flex; gap: 16px; overflow-y: auto; }

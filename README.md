@@ -167,12 +167,15 @@ Point any MCP client at it (Flowforge itself must be running):
 }
 ```
 
-14 tools: `list_nodes`, `describe_node`, `list_workflows`, `get_workflow`,
+14 tools: `list_nodes`, `describe_node`, `find_node`, `list_workflows`, `get_workflow`,
 `create_workflow`, `update_workflow`, `delete_workflow`, `run_workflow`,
-`test_node`, `create_custom_node`, `delete_custom_node`, `export_workflow`,
+`test_node`, `create_custom_node`, `delete_custom_node`, `rollback_custom_node`,
+`set_custom_node_enabled`, `export_workflow`,
 `import_workflow`, `list_executions` — plus a `flowforge://nodes-catalog`
-resource. Typical agent loop: `describe_node` → `create_custom_node` (if no
-fit) → `create_workflow` → `run_workflow` → fix from errors → repeat.
+resource. Typical agent loop: `find_node` → `describe_node` →
+`create_custom_node` (with examples + author, if no fit) → `run_workflow` →
+fix from errors → repeat. Approval stays human: there is deliberately no
+approve tool — `POST /api/custom-nodes/:key/approve` is UI/manual only.
 
 Setup lives in the UI: topbar **⚙ Settings** shows MCP status (built or not),
 generates copy-paste configs for Claude Code / Claude Desktop / generic
@@ -208,6 +211,46 @@ Set permissions in Library → node editor (hosts textarea + checkboxes),
 validate them with draft **Run test**, or pass `permissions` to
 `POST /api/custom-nodes` / MCP `create_custom_node`. They persist on the node,
 travel with export/import, and apply to saved-node tests too.
+
+## Trust ladder, provenance, versions
+
+Every custom node carries a status it must earn:
+
+```
+draft → (examples all pass at save) → tested → (human Approve) → approved
+```
+
+- **draft**: fresh or edited code. Only the node-test endpoints run it.
+  Workflows using it refuse to run — manually or automatically.
+- **tested**: declared example I/O (`examples: [{ name, params, items }]`,
+  pass = runs without error) passed at save time, with the report stored on
+  the node. Manual **Run** works; webhooks/cron refuse (403 / skipped).
+- **approved**: a human clicked Approve in the Library. Required for
+  webhook/cron/active schedules.
+- Any code/properties/permissions/examples change resets to `draft`;
+  metadata-only edits keep status. Approve is UI/manual-API only — no MCP
+  tool, by design.
+- **Provenance**: `author` records who saved each version (`human`,
+  `mcp:…`, agent names). **Versions**: every content change snapshots
+  (`GET /api/custom-nodes/:key/versions`, rollback re-tests on the way in).
+
+## Reuse-before-create
+
+`GET /api/nodes/search?q=...` (MCP: `find_node`) scores the catalog by
+name/key/description/category match **plus real usage** (workflows using each
+node), with reasons per hit — so agents (and the Library editor's
+auto-suggest) reach for existing nodes instead of minting the eleventh
+`upperCase` variant.
+
+## Blast-radius controls
+
+- **Per-node limits** on every custom node: `timeoutMs` (1–30s) and
+  `maxItems` (1–10k) — exceeded output errors instead of flooding downstream.
+- **Kill switch**: disable a node (Library **Kill** button,
+  `POST /api/custom-nodes/:key/enable`, MCP `set_custom_node_enabled`) and
+  every workflow using it refuses to run until re-enabled.
+- **No runaway loops by construction**: the engine executes a DAG once —
+  cycles simply never fire, and untrusted nodes can't reach triggers.
 
 ## Testing a single node
 

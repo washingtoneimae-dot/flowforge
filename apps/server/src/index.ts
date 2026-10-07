@@ -1,7 +1,8 @@
 import express from 'express';
 import { db, WorkflowRow, ExecutionRow } from './db.js';
 import { nodeRegistry, resolveNode, isCustomNode, categoryOf, refreshCustomNodes } from './registry.js';
-import { validateCustomNode, runCustomCode, listCustomNodeRows, normalizePermissions, parseRowPermissions } from './customNodes.js';
+import { validateCustomNode, runCustomCode, listCustomNodeRows, normalizePermissions, parseRowPermissions, saveCustomNode, rollbackCustomNode, approveCustomNode, setCustomNodeEnabled, checkCustomTrust, rowToApi, getCustomNodeRow } from './customNodes.js';
+import { searchNodes, workflowUsage } from './nodeSearch.js';
 import { loadMcpConfig, saveMcpConfig, mcpDistExists, MCP_TOOL_NAMES } from '@flowforge/node-sdk';
 import { toExportDoc, parseImportDoc } from './workflowIo.js';
 import { executeWorkflow, Workflow } from '@flowforge/engine';
@@ -51,32 +52,70 @@ app.get('/api/nodes', (_req, res) => {
     key: n.key, displayName: n.displayName, description: n.description,
     kind: n.kind, icon: n.icon, version: n.version, category: categoryOf(n),
     custom: isCustomNode(n.key),
+    trust: isCustomNode(n.key) ? (() => { const r = getCustomNodeRow(n.key); return r ? { status: r.status ?? 'draft', author: r.author ?? 'human', version: r.version ?? 1, disabled: (r.disabled ?? 0) === 1 } : undefined; })() : undefined,
     inputs: n.inputs, outputs: n.outputs, properties: n.properties,
   })));
+});
+
+app.get('/api/nodes/search', (req, res) => {
+  const q = String(req.query.q ?? '');
+  const kind = req.query.kind ? String(req.query.kind) : undefined;
+  const category = req.query.category ? String(req.query.category) : undefined;
+  const limit = Math.max(1, Math.min(Number(req.query.limit ?? 8) || 8, 25));
+  const catalog = [...nodeRegistry.values()]
+    .filter((n) => !kind || n.kind === kind)
+    .filter((n) => !category || categoryOf(n) === category)
+    .map((n) => ({ key: n.key, displayName: n.displayName, description: n.description ?? '', category: categoryOf(n), kind: n.kind, custom: isCustomNode(n.key) }));
+  const rows = db.prepare('SELECT definition FROM workflows').all() as unknown as Array<{ definition: string }>;
+  const defs = rows.map((r) => { try { return JSON.parse(r.definition); } catch { return { nodes: [] }; } });
+  res.json(searchNodes(q, catalog, workflowUsage(defs), limit));
 });
 
 // ---- custom nodes (created in the Library UI, stored in SQLite) ----
 
 app.get('/api/custom-nodes', (_req, res) => {
-  res.json(listCustomNodeRows().map((r) => ({
-    key: r.key, displayName: r.display_name, description: r.description,
-    category: r.category, properties: JSON.parse(r.properties), code: r.code, icon: r.icon ?? '',
-    permissions: (() => { try { return JSON.parse(r.permissions ?? '{}'); } catch { return {}; } })(),
-    created_at: r.created_at, updated_at: r.updated_at,
-  })));
+  res.json(listCustomNodeRows().map(rowToApi));
 });
 
-app.post('/api/custom-nodes', (req, res) => {
+app.get('/api/custom-nodes/:key/versions', (req, res) => {
+  const rows = db.prepare('SELECT key,version,display_name,description,status,author,test_report,created_at FROM custom_node_versions WHERE key=? ORDER BY version DESC').all(req.params.key);
+  res.json(rows);
+});
+
+app.post('/api/custom-nodes', async (req, res) => {
   try {
     const v = validateCustomNode(req.body);
     if (resolveNode(v.key) && !isCustomNode(v.key)) {
       return res.status(409).json({ error: `key "${v.key}" is already used by a built-in node` });
     }
-    const now = new Date().toISOString();
-    db.prepare('INSERT OR REPLACE INTO custom_nodes (key,display_name,description,category,properties,code,icon,permissions,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,COALESCE((SELECT created_at FROM custom_nodes WHERE key=?),?),?)')
-      .run(v.key, v.displayName, v.description, v.category, JSON.stringify(v.properties), v.code, v.icon, JSON.stringify(v.permissions), v.key, now, now);
+    const saved = await saveCustomNode(v);
     refreshCustomNodes();
-    res.status(201).json({ ok: true, key: v.key });
+    res.status(201).json({ ok: true, ...saved });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+
+app.post('/api/custom-nodes/:key/rollback', async (req, res) => {
+  try {
+    const version = Number(req.body?.version);
+    if (!Number.isInteger(version)) return res.status(400).json({ error: 'version must be an integer' });
+    const saved = await rollbackCustomNode(req.params.key, version, String(req.body?.author ?? 'human'));
+    refreshCustomNodes();
+    res.json({ ok: true, ...saved });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+
+app.post('/api/custom-nodes/:key/approve', (req, res) => {
+  try {
+    const row = approveCustomNode(req.params.key, String(req.body?.by ?? 'human'));
+    res.json({ ok: true, status: row.status });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+
+app.post('/api/custom-nodes/:key/enable', (req, res) => {
+  try {
+    const enabled = req.body?.enabled !== false;
+    const row = setCustomNodeEnabled(req.params.key, enabled);
+    res.json({ ok: true, disabled: (row.disabled ?? 0) === 1 });
   } catch (e) { res.status(400).json({ error: (e as Error).message }); }
 });
 
@@ -190,10 +229,18 @@ app.delete('/api/workflows/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-async function runWorkflow(wfId: string, initialItems: unknown[] = []) {
+async function runWorkflow(wfId: string, initialItems: unknown[] = [], opts: { manual?: boolean } = {}) {
   const row = db.prepare('SELECT * FROM workflows WHERE id=?').get(wfId) as WorkflowRow | undefined;
   if (!row) throw new Error('workflow not found');
   const def = JSON.parse(row.definition);
+  // Trust ladder: disabled/draft custom nodes never run; tested-only nodes
+  // run manually but never on automatic triggers (webhook/cron).
+  const trust = checkCustomTrust((def.nodes ?? []).map((n: any) => n.type));
+  if (trust.disabled.length) throw new Error(`custom node(s) disabled: ${trust.disabled.join(', ')}`);
+  if (trust.draft.length) throw new Error(`custom node(s) not yet tested: ${trust.draft.join(', ')} — run their self-test first`);
+  if (!opts.manual && trust.tested.length) {
+    throw new Error(`custom node(s) not approved for automatic runs: ${trust.tested.join(', ')} — approve them in the Library`);
+  }
   const wf: Workflow = { id: row.id, name: row.name, nodes: def.nodes, edges: def.edges };
   const result = await executeWorkflow(wf, resolveNode, { initialItems: initialItems as any, concurrency: 4 });
   db.prepare('INSERT INTO executions (id,workflow_id,status,result,started_at,finished_at) VALUES (?,?,?,?,?,?)')
@@ -201,12 +248,12 @@ async function runWorkflow(wfId: string, initialItems: unknown[] = []) {
   // simple retention: keep last 200 executions per workflow
   db.prepare('DELETE FROM executions WHERE workflow_id=? AND id NOT IN (SELECT id FROM executions WHERE workflow_id=? ORDER BY started_at DESC LIMIT 200)')
     .run(wfId, wfId);
-  return result;
+  return { ...result, trust: { testedUnapproved: trust.tested } };
 }
 
 app.post('/api/workflows/:id/run', async (req, res) => {
   try {
-    const result = await runWorkflow(req.params.id, req.body?.items ?? []);
+    const result = await runWorkflow(req.params.id, req.body?.items ?? [], { manual: true });
     res.json(result);
   } catch (e) { res.status(400).json({ error: (e as Error).message }); }
 });
@@ -233,7 +280,11 @@ app.all('/hook/:path', async (req, res) => {
       try {
         const result = await runWorkflow(row.id, items);
         return res.json({ ok: true, executionId: result.executionId, status: result.status });
-      } catch (e) { return res.status(500).json({ error: (e as Error).message }); }
+      } catch (e) {
+        const msg = (e as Error).message;
+        const code = /not approved|not yet tested|disabled/.test(msg) ? 403 : 500;
+        return res.status(code).json({ error: msg });
+      }
     }
   }
   res.status(404).json({ error: 'no active workflow for this webhook path' });
@@ -252,7 +303,8 @@ setInterval(async () => {
     const last = cronState.get(row.id) ?? 0;
     if (now - last >= interval) {
       cronState.set(row.id, now);
-      runWorkflow(row.id, [{ json: { scheduled: true, at: new Date().toISOString() } }]).catch(() => {});
+      runWorkflow(row.id, [{ json: { scheduled: true, at: new Date().toISOString() } }])
+        .catch((err) => console.warn(`[cron] skipped ${row.id}: ${(err as Error).message}`));
     }
   }
 }, 1000).unref();
