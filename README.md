@@ -111,11 +111,15 @@ From a card you can **Add** it to the canvas, **Disable** it (hidden from the
 palette, remembered in the browser), and for your own nodes **Edit/Delete**.
 
 **+ New node**: key, display name, description, category, inspector fields
-(properties JSON), and a code editor. Same contract as the Code node —
+(properties JSON), and a Monaco code editor (JS highlighting, dark, bundled
+locally — works offline, lazy-loaded). Same contract as the Code node —
 `items` and `params` in scope, return items or `{ branches }` — with a
 **Run test** button that executes the draft without saving. Saved nodes are
 stored in SQLite, hot-loaded into the registry, and usable in workflows
 immediately. Custom nodes are actions only (triggers need server wiring).
+
+All `code`/`json` inspector fields (Code, Python, JSON bodies, …) also use
+Monaco now: JavaScript/Python/JSON highlighting, `vs-dark` to match the theme.
 
 ```
 GET    /api/custom-nodes        — list your nodes (with code)

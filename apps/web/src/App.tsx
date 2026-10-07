@@ -5,6 +5,11 @@ import {
 } from '@xyflow/react';
 import './index.css';
 
+const CodeField = React.lazy(() => import('./CodeField.js'));
+const CodeFieldFallback = ({ height }: { height: number | string }) => (
+  <div className="monaco-wrap muted" style={{ height, padding: 10 }}>Loading editor…</div>
+);
+
 const api = async (path: string, init?: RequestInit) => {
   const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...init });
   return r.json();
@@ -102,6 +107,7 @@ export default function App() {
   const [editing, setEditing] = useState<any | null>(null); // custom node draft
   const [editError, setEditError] = useState<string | null>(null);
   const [editTestResult, setEditTestResult] = useState<any>(null);
+  const [customTestInput, setCustomTestInput] = useState('[{"json":{}}]');
 
   useEffect(() => { api('/api/nodes').then(setNodeDefs); api('/api/workflows').then(setWorkflows); }, []);
   const refreshNodes = useCallback(() => api('/api/nodes').then(setNodeDefs), []);
@@ -317,6 +323,7 @@ export default function App() {
     setEditing({ key: '', displayName: '', description: '', category: 'custom', properties: '[]', code: '// items: [{ json }], params: your fields\nreturn items.map(i => ({ json: { ...i.json } }));' });
     setEditError(null);
     setEditTestResult(null);
+    setCustomTestInput('[{"json":{}}]');
   };
 
   const openEditCustom = async (key: string) => {
@@ -326,6 +333,7 @@ export default function App() {
     setEditing({ ...row, properties: JSON.stringify(row.properties ?? [], null, 2) });
     setEditError(null);
     setEditTestResult(null);
+    setCustomTestInput('[{"json":{}}]');
   };
 
   const saveCustom = async () => {
@@ -354,8 +362,7 @@ export default function App() {
     setEditTestResult(null);
     let items: any;
     try {
-      const raw = (document.getElementById('custom-test-input') as HTMLTextAreaElement)?.value ?? '[{"json":{}}]';
-      items = JSON.parse(raw);
+      items = JSON.parse(customTestInput);
       if (!Array.isArray(items)) throw new Error('must be an array');
     } catch (e) { setEditTestResult({ error: `Bad test input: ${(e as Error).message}` }); return; }
     const params: any = {};
@@ -421,7 +428,14 @@ export default function App() {
                       {p.options.map((o: any) => <option key={String(o.value)} value={o.value}>{o.name}</option>)}
                     </select>
                   ) : p.type === 'code' || p.type === 'json' ? (
-                    <textarea rows={p.type === 'code' ? 8 : 4} value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)} />
+                    <React.Suspense fallback={<CodeFieldFallback height={p.type === 'code' ? 220 : 130} />}>
+                      <CodeField
+                        height={p.type === 'code' ? 220 : 130}
+                        language={p.type === 'json' ? 'json' : ((selected.data as any).type === 'pythonCode' ? 'python' : 'javascript')}
+                        value={String((selected.data as any).params?.[p.key] ?? '')}
+                        onChange={(v) => setParam(p, v)}
+                      />
+                    </React.Suspense>
                   ) : p.type === 'number' ? (
                     <input type="number" value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, Number(e.target.value))} />
                   ) : (
@@ -488,8 +502,9 @@ export default function App() {
                   <label className="field"><span>Category</span>
                     <input value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })} placeholder="custom" /></label>
                   <label className="field"><span>Properties (JSON array of fields shown in the inspector)</span>
-                    <textarea rows={4} value={editing.properties} onChange={(e) => setEditing({ ...editing, properties: e.target.value })}
-                      placeholder='[{"key":"field","displayName":"Field","type":"string","default":""}]' /></label>
+                    <React.Suspense fallback={<CodeFieldFallback height={130} />}>
+                      <CodeField height={130} language="json" value={editing.properties} onChange={(v) => setEditing({ ...editing, properties: v })} />
+                    </React.Suspense></label>
                   {editError && <div className="error">{editError}</div>}
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn primary" onClick={saveCustom}>Save node</button>
@@ -498,9 +513,13 @@ export default function App() {
                 </div>
                 <div className="editor-code">
                   <label className="field"><span>Code — <code>items</code> and <code>params</code> are in scope. Return items or <code>{'{ branches }'}</code>.</span>
-                    <textarea className="codebox" rows={18} value={editing.code} onChange={(e) => setEditing({ ...editing, code: e.target.value })} spellCheck={false} /></label>
+                    <React.Suspense fallback={<CodeFieldFallback height={320} />}>
+                      <CodeField height={320} language="javascript" value={editing.code} onChange={(v) => setEditing({ ...editing, code: v })} />
+                    </React.Suspense></label>
                   <label className="field"><span>Test input</span>
-                    <textarea id="custom-test-input" rows={3} defaultValue='[{"json":{}}]' /></label>
+                    <React.Suspense fallback={<CodeFieldFallback height={110} />}>
+                      <CodeField height={110} language="json" value={customTestInput} onChange={setCustomTestInput} />
+                    </React.Suspense></label>
                   <button className="btn" onClick={testCustomDraft}>Run test</button>
                   {editTestResult && <pre className="run" style={{ marginTop: 8 }}>{JSON.stringify(editTestResult, null, 2)}</pre>}
                 </div>
