@@ -13,6 +13,8 @@
 }
 
 * { box-sizing: border-box; }
+/* Monaco measures its own layout — global border-box makes lines overlap */
+.monaco-editor, .monaco-editor * { box-sizing: content-box; }
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 13px; }
 

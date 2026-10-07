@@ -702,6 +702,7 @@ export default function App() {
                       <CodeField
                         height={p.type === 'code' ? 220 : 130}
                         language={p.type === 'json' ? 'json' : ((selected.data as any).type === 'pythonCode' ? 'python' : 'javascript')}
+                        path={`node-${(selected.data as any).type}-${p.key}`}
                         value={String((selected.data as any).params?.[p.key] ?? '')}
                         onChange={(v) => setParam(p, v)}
                       />
@@ -882,7 +883,7 @@ export default function App() {
                   </label>
                   <label className="field"><span>Properties (JSON array of fields shown in the inspector)</span>
                     <React.Suspense fallback={<CodeFieldFallback height={130} />}>
-                      <CodeField height={130} language="json" value={editing.properties} onChange={(v) => setEditing({ ...editing, properties: v })} />
+                      <CodeField height={130} language="json" path="custom-props" value={editing.properties} onChange={(v) => setEditing({ ...editing, properties: v })} />
                     </React.Suspense></label>
                   <div className="field"><span>Permissions — capabilities granted to the code (none by default)</span>
                     <label className="field"><span>Network hosts, one per line (code gets <code>fetch</code>)</span>
@@ -938,11 +939,11 @@ export default function App() {
                 <div className="editor-code">
                   <label className="field"><span>Code — <code>items</code> and <code>params</code> are in scope. Return items or <code>{'{ branches }'}</code>.</span>
                     <React.Suspense fallback={<CodeFieldFallback height={320} />}>
-                      <CodeField height={320} language="javascript" value={editing.code} onChange={(v) => setEditing({ ...editing, code: v })} />
+                      <CodeField height={320} language="javascript" path="custom-code" value={editing.code} onChange={(v) => setEditing({ ...editing, code: v })} />
                     </React.Suspense></label>
                   <label className="field"><span>Test input</span>
                     <React.Suspense fallback={<CodeFieldFallback height={110} />}>
-                      <CodeField height={110} language="json" value={customTestInput} onChange={setCustomTestInput} />
+                      <CodeField height={110} language="json" path="custom-test" value={customTestInput} onChange={setCustomTestInput} />
                     </React.Suspense></label>
                   <button className="btn" onClick={testCustomDraft}>Run test</button>
                   {editTestResult && <pre className="run" style={{ marginTop: 8 }}>{JSON.stringify(editTestResult, null, 2)}</pre>}
