@@ -490,7 +490,7 @@ export const fileOpsNode = defineNode({
   outputs: ['main'],
   properties: [
     { key: 'operation', displayName: 'Operation', type: 'options', default: 'read', options: [{ name: 'Read', value: 'read' }, { name: 'Write', value: 'write' }, { name: 'List', value: 'list' }] },
-    { key: 'path', displayName: 'Path', type: 'file', fileScope: 'sandbox', default: 'hello.txt' },
+    { key: 'path', displayName: 'Path', type: 'file', fileScope: 'device', default: 'hello.txt' },
     { key: 'content', displayName: 'Content (write only)', type: 'code', default: '' },
   ],
   async execute(ctx) {

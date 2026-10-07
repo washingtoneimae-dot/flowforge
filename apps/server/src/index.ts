@@ -177,9 +177,8 @@ app.get('/api/files', (req, res) => {
     const scope = String(req.query.scope ?? 'sandbox');
     const nodeKey = req.query.node === undefined ? undefined : String(req.query.node);
     const rel = String(req.query.path ?? '');
-    const { root, label } = resolveRoot(scope, nodeKey);
-    res.json({ root: label, ...listFiles(root, rel) });
-  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+    const { root, label, mkdir } = resolveRoot(scope, nodeKey);
+    res.json({ root: label, ...listFiles(root, rel, mkdir) });  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
 });
 
 app.post('/api/nodes/:key/test', async (req, res) => {

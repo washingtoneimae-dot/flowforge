@@ -46,7 +46,7 @@ export interface NodeProperty {
   /** For type: 'collection' — nested fields */
   properties?: NodeProperty[];
   /** For type: 'file' — which jail the browser lists */
-  fileScope?: 'sandbox' | 'custom';
+  fileScope?: 'sandbox' | 'custom' | 'device';
 }
 
 export interface NodeDefinition {

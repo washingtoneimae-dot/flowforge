@@ -299,8 +299,10 @@ Node unit tests live next to the code (`packages/nodes-core/src/index.test.ts`,
 
 The canvas inspector is generated from each node's `properties` schema —
 `string`, `number`, `boolean` toggle, `options` dropdown, `json`, `code`,
-and `file` (a jailed browser: `data/sandbox`, or `data/custom/<nodeKey>/`
-for custom nodes via `GET /api/files`). Agents only ever write
+and `file` (a browser rooted at `data/sandbox`, `data/custom/<nodeKey>/`, or
+the whole `device (/)` — the File node and file variables browse the device;
+missing folders are never auto-created outside the sandbox, and unreadable
+ones report an error instead). Agents only ever write
 `execute()` + the schema; the UI comes free. The canvas uses plain fields
 throughout (Monaco lives only in the Library workshop).
 
