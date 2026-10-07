@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { setFields, ifNode, filterNode, switchNode, splitOutNode, aggregateNode, cryptoNode, jsonParseNode, coreNodes, datetimeNode, waitNode } from './index.js';
+import { setFields, ifNode, filterNode, switchNode, splitOutNode, aggregateNode, cryptoNode, jsonParseNode, coreNodes, datetimeNode, waitNode, scriptStart, scriptEnd, nodeCategories } from './index.js';
 
 const ctx = (params: any, items: any[] = [{ json: {} }]) => ({
   params, items, vars: {}, workflow: { id: 'w', name: 'n' }, error: (m: string) => new Error(m),
@@ -90,5 +90,18 @@ describe('registry', () => {
       expect(typeof n.execute).toBe('function');
     }
     expect(coreNodes.length).toBeGreaterThanOrEqual(15);
+  });
+  it('every core node has a category', () => {
+    for (const n of coreNodes) {
+      expect(nodeCategories[n.key], n.key).toBeTruthy();
+    }
+  });
+});
+
+describe('script markers', () => {
+  it('pass items through unchanged', async () => {
+    const items = [{ json: { a: 1 } }];
+    expect(await scriptStart.execute(ctx({ blockId: 'b' }, items))).toEqual(items);
+    expect(await scriptEnd.execute(ctx({ blockId: 'b' }, items))).toEqual(items);
   });
 });

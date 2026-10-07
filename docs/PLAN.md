@@ -22,6 +22,8 @@
 - [x] Auto-loading of `flowforge-node-*` community packages
 - [x] Export/import of workflow JSON (`*.flowforge.json`, validated)
 - [x] Single-node test run (inspector + `POST /api/nodes/:key/test`)
+- [x] Node Library: categories, search, enable/disable, custom-node creator with code editor + draft test
+- [x] Script Start/End markers: collapsible, nestable script blocks
 
 ## Next
 

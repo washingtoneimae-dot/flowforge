@@ -1,6 +1,7 @@
 import express from 'express';
 import { db, WorkflowRow, ExecutionRow } from './db.js';
-import { nodeRegistry, resolveNode } from './registry.js';
+import { nodeRegistry, resolveNode, isCustomNode, categoryOf, refreshCustomNodes } from './registry.js';
+import { validateCustomNode, runCustomCode, listCustomNodeRows } from './customNodes.js';
 import { toExportDoc, parseImportDoc } from './workflowIo.js';
 import { executeWorkflow, Workflow } from '@flowforge/engine';
 import { mkdirSync, watch } from 'node:fs';
@@ -15,9 +16,55 @@ const id = () => `wf_${Date.now().toString(36)}${Math.random().toString(36).slic
 app.get('/api/nodes', (_req, res) => {
   res.json([...nodeRegistry.values()].map((n) => ({
     key: n.key, displayName: n.displayName, description: n.description,
-    kind: n.kind, icon: n.icon, version: n.version,
+    kind: n.kind, icon: n.icon, version: n.version, category: categoryOf(n),
+    custom: isCustomNode(n.key),
     inputs: n.inputs, outputs: n.outputs, properties: n.properties,
   })));
+});
+
+// ---- custom nodes (created in the Library UI, stored in SQLite) ----
+
+app.get('/api/custom-nodes', (_req, res) => {
+  res.json(listCustomNodeRows().map((r) => ({
+    key: r.key, displayName: r.display_name, description: r.description,
+    category: r.category, properties: JSON.parse(r.properties), code: r.code,
+    created_at: r.created_at, updated_at: r.updated_at,
+  })));
+});
+
+app.post('/api/custom-nodes', (req, res) => {
+  try {
+    const v = validateCustomNode(req.body);
+    if (resolveNode(v.key) && !isCustomNode(v.key)) {
+      return res.status(409).json({ error: `key "${v.key}" is already used by a built-in node` });
+    }
+    const now = new Date().toISOString();
+    db.prepare('INSERT OR REPLACE INTO custom_nodes (key,display_name,description,category,properties,code,created_at,updated_at) VALUES (?,?,?,?,?,?,COALESCE((SELECT created_at FROM custom_nodes WHERE key=?),?),?)')
+      .run(v.key, v.displayName, v.description, v.category, JSON.stringify(v.properties), v.code, v.key, now, now);
+    refreshCustomNodes();
+    res.status(201).json({ ok: true, key: v.key });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+
+app.delete('/api/custom-nodes/:key', (req, res) => {
+  if (!isCustomNode(req.params.key)) return res.status(404).json({ error: 'not a custom node' });
+  db.prepare('DELETE FROM custom_nodes WHERE key=?').run(req.params.key);
+  refreshCustomNodes();
+  res.json({ ok: true });
+});
+
+/** Test an unsaved draft: { code, params, items } — no DB write. */
+app.post('/api/custom-nodes/test', (req, res) => {
+  const code = String(req.body?.code ?? '');
+  if (!code.trim()) return res.status(400).json({ error: 'code is required' });
+  const params = (req.body?.params && typeof req.body.params === 'object' ? req.body.params : {}) as Record<string, unknown>;
+  const rawItems = Array.isArray(req.body?.items) ? req.body.items : [{ json: {} }];
+  const items = rawItems.map((it: any) => (it && typeof it.json === 'object' ? { json: it.json } : { json: (it ?? {}) as Record<string, unknown> }));
+  try {
+    const out = runCustomCode(code, { items, params });
+    if (out && typeof out === 'object' && Array.isArray((out as any).branches)) return res.json({ branches: (out as any).branches });
+    return res.json({ items: out });
+  } catch (e) { return res.status(400).json({ error: (e as Error).message }); }
 });
 
 app.post('/api/nodes/:key/test', async (req, res) => {

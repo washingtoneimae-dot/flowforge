@@ -49,6 +49,8 @@ export interface NodeDefinition {
   version: number;
   /** 'trigger' nodes start a workflow; 'action' nodes transform data. */
   kind: 'trigger' | 'action';
+  /** Library grouping: triggers, logic, data, code, network, files, flow, custom. */
+  category?: string;
   /** Lucide/emoji icon hint, resolved by the UI when available. */
   icon?: string;
   inputs: ('main' | 'none')[];

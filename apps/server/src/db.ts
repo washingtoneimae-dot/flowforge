@@ -25,7 +25,18 @@ CREATE TABLE IF NOT EXISTS executions (
   finished_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_exec_workflow ON executions(workflow_id);
+CREATE TABLE IF NOT EXISTS custom_nodes (
+  key TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT 'custom',
+  properties TEXT NOT NULL DEFAULT '[]',
+  code TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `);
 
 export interface WorkflowRow { id: string; name: string; definition: string; active: number; created_at: string; updated_at: string; }
 export interface ExecutionRow { id: string; workflow_id: string; status: string; result: string; started_at: string; finished_at: string; }
+export interface CustomNodeRow { key: string; display_name: string; description: string; category: string; properties: string; code: string; created_at: string; updated_at: string; }

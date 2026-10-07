@@ -63,6 +63,7 @@ route items to different output handles), and execution history persisted in SQL
 | Merge | action | Combine multiple input streams |
 | Code (JavaScript) | action | Sandboxed `vm` code with 5s timeout |
 | Python | action | Run a Python script, items via `FLOW_ITEMS` |
+| Script Start / Script End | action | Mark a collapsible, nestable script block (same Block ID) |
 | NoOp | action | Pass-through |
 | Wait | action | Pause the flow |
 | Split Out | action | Fan an array field into many items |
@@ -101,6 +102,37 @@ into `node_modules`, and the server picks it up automatically at boot.
 
 `ctx.items` is an array of `{ json }` objects — the same item shape n8n uses, so
 data flows between nodes without conversion.
+
+## Node Library
+
+Topbar **Library**: every node in one place, grouped by category
+(triggers, logic, data, code, network, files, flow, custom), with search.
+From a card you can **Add** it to the canvas, **Disable** it (hidden from the
+palette, remembered in the browser), and for your own nodes **Edit/Delete**.
+
+**+ New node**: key, display name, description, category, inspector fields
+(properties JSON), and a code editor. Same contract as the Code node —
+`items` and `params` in scope, return items or `{ branches }` — with a
+**Run test** button that executes the draft without saving. Saved nodes are
+stored in SQLite, hot-loaded into the registry, and usable in workflows
+immediately. Custom nodes are actions only (triggers need server wiring).
+
+```
+GET    /api/custom-nodes        — list your nodes (with code)
+POST   /api/custom-nodes        — create/update { key, displayName, description, category, properties, code }
+DELETE /api/custom-nodes/:key   — delete
+POST   /api/custom-nodes/test   — test a draft { code, params, items }
+```
+
+## Script blocks (collapse / expand, nestable)
+
+For pure-code-style grouping without leaving the canvas: drop a **Script
+Start** and a **Script End** with the same **Block ID** around any nodes.
+Select either marker → **Collapse to one node** (or Expand). The block renders
+as a single black node with a live count; outgoing edges rewire to it with a
+dashed line. Put one Start/End pair inside another to nest scripts. Markers
+are pass-throughs at runtime, so execution is unaffected. Collapsed state is
+saved in the workflow (`definition.collapsed`).
 
 ## Testing a single node
 

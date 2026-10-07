@@ -1,10 +1,13 @@
 import type { NodeDefinition } from '@flowforge/node-sdk';
-import { coreNodes } from '@flowforge/nodes-core';
+import { coreNodes, nodeCategories } from '@flowforge/nodes-core';
+import { loadCustomNodes } from './customNodes.js';
 import { createRequire } from 'node:module';
 import { readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const registry = new Map<string, NodeDefinition>();
+/** Keys contributed by UI-created custom nodes (rebuilt on every refresh). */
+const customKeys = new Set<string>();
 
 // 1. Built-in nodes
 for (const n of coreNodes) registry.set(n.key, n);
@@ -45,5 +48,23 @@ function loadExternal() {
 
 try { loadExternal(); } catch { /* ignore */ }
 
+/** (Re)load UI-created custom nodes from SQLite. Custom keys win on conflict. */
+export function refreshCustomNodes() {
+  for (const k of customKeys) registry.delete(k);
+  customKeys.clear();
+  for (const n of loadCustomNodes()) {
+    if (registry.has(n.key)) {
+      console.warn(`[registry] custom node key "${n.key}" is taken — skipped`);
+      continue;
+    }
+    registry.set(n.key, n);
+    customKeys.add(n.key);
+  }
+}
+
+try { refreshCustomNodes(); } catch { /* ignore — e.g. fresh DB */ }
+
 export const nodeRegistry = registry;
 export const resolveNode = (type: string) => registry.get(type);
+export const isCustomNode = (key: string) => customKeys.has(key);
+export const categoryOf = (def: NodeDefinition) => def.category ?? nodeCategories[def.key] ?? 'other';

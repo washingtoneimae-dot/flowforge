@@ -494,9 +494,59 @@ export const fileOpsNode = defineNode({
   },
 });
 
+/* ------------------------------ script markers ------------------------------ */
+
+export const scriptStart = defineNode({
+  key: 'scriptStart',
+  displayName: 'Script Start',
+  description: 'Marks where a named script block begins. Pair with a Script End using the same Block ID. Collapse the block in the editor to see it as one node.',
+  version: 1,
+  kind: 'action',
+  category: 'code',
+  icon: 'chevron-right',
+  inputs: ['main'],
+  outputs: ['main'],
+  properties: [
+    { key: 'blockId', displayName: 'Block ID (must match Script End)', type: 'string', default: 'my-script', required: true },
+  ],
+  execute(ctx) {
+    return ctx.items;
+  },
+});
+
+export const scriptEnd = defineNode({
+  key: 'scriptEnd',
+  displayName: 'Script End',
+  description: 'Marks where a named script block ends. Pair with a Script Start using the same Block ID. Blocks nest: put one pair inside another.',
+  version: 1,
+  kind: 'action',
+  category: 'code',
+  icon: 'chevron-left',
+  inputs: ['main'],
+  outputs: ['main'],
+  properties: [
+    { key: 'blockId', displayName: 'Block ID (must match Script Start)', type: 'string', default: 'my-script', required: true },
+  ],
+  execute(ctx) {
+    return ctx.items;
+  },
+});
+
+/** Library categories for built-in nodes. Custom nodes carry their own. */
+export const nodeCategories: Record<string, string> = {
+  manualTrigger: 'triggers', webhookTrigger: 'triggers', cronTrigger: 'triggers',
+  if: 'logic', switch: 'logic', filter: 'logic', merge: 'logic',
+  setFields: 'data', splitOut: 'data', aggregate: 'data', jsonParse: 'data', datetime: 'data', crypto: 'data',
+  code: 'code', pythonCode: 'code', scriptStart: 'code', scriptEnd: 'code',
+  httpRequest: 'network', sendEmail: 'network',
+  fileOps: 'files',
+  noOp: 'flow', wait: 'flow',
+};
+
 export const coreNodes = [
   manualTrigger, webhookTrigger, cronTrigger,
   httpRequest, setFields, ifNode, switchNode, filterNode, mergeNode,
-  codeNode, pythonCodeNode, noOpNode, waitNode, splitOutNode, aggregateNode,
+  codeNode, pythonCodeNode, scriptStart, scriptEnd,
+  noOpNode, waitNode, splitOutNode, aggregateNode,
   datetimeNode, cryptoNode, jsonParseNode, sendEmailNode, fileOpsNode,
 ];

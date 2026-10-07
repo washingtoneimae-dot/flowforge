@@ -59,3 +59,35 @@ body { background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui
 .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--ink); }
 .muted { color: var(--ink-3); }
 pre.run { background: #111; color: #eee; border-radius: 8px; padding: 10px; font-size: 10px; overflow: auto; max-height: 40vh; }
+.error { background: #111; color: #fff; border-radius: 8px; padding: 8px 10px; font-size: 12px; margin-bottom: 12px; }
+
+/* collapsed script node */
+.ff-node.is-collapsed { border: 2px solid var(--ink); background: #111; color: #fff; }
+.ff-node.is-collapsed .title { color: #fff; }
+.ff-node.is-collapsed .kind { color: #bbb; }
+
+/* library overlay */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 50; }
+.library { background: var(--bg); border: 1px solid var(--line-2); border-radius: 14px; width: min(1020px, 94vw); max-height: 88vh; display: flex; flex-direction: column; padding: 20px; overflow: hidden; }
+.lib-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.lib-head h2 { margin: 0; font-size: 16px; }
+.lib-filters { display: flex; gap: 8px; margin-bottom: 14px; }
+.lib-filters input, .lib-filters select { border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 10px; font-size: 12px; background: #fff; }
+.lib-filters input { flex: 1; }
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; overflow-y: auto; padding-bottom: 4px; }
+.lib-card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.lib-card.is-disabled { opacity: 0.55; }
+.lib-card-title { font-weight: 700; font-size: 13px; }
+.lib-badges { display: flex; gap: 4px; flex-wrap: wrap; }
+.badge { font-size: 10px; border: 1px solid var(--line-2); border-radius: 20px; padding: 1px 8px; color: var(--ink-2); }
+.badge.dark { background: #111; color: #fff; border-color: #111; }
+.lib-card-desc { font-size: 11px; color: var(--ink-2); min-height: 28px; }
+.lib-card-key { font-size: 10px; font-family: ui-monospace, monospace; }
+.lib-card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.lib-card-actions .btn { padding: 4px 10px; font-size: 11px; }
+
+/* custom node editor */
+.editor { display: flex; gap: 16px; overflow-y: auto; }
+.editor-form { width: 320px; flex-shrink: 0; }
+.editor-code { flex: 1; min-width: 0; }
+.codebox { min-height: 280px; background: #111 !important; color: #eee !important; border-color: #111 !important; line-height: 1.5; tab-size: 2; }
