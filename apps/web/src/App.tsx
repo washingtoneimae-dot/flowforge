@@ -119,6 +119,11 @@ function FileField({ value, onChange, scope, nodeKey }: { value: string; onChang
     setEntries(r.entries ?? []);
     setOpen(true);
   };
+  const go = (ev: React.MouseEvent, p: string) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    browse(p);
+  };
   return (
     <div>
       <div className="row">
@@ -128,11 +133,22 @@ function FileField({ value, onChange, scope, nodeKey }: { value: string; onChang
       {open && (
         <div className="file-list">
           {err && <div className="error">{err}</div>}
-          {path !== '' && <div className="file-row" onClick={() => browse(path.split('/').slice(0, -1).join('/'))}>.. (up)</div>}
+          <div className="file-crumbs">
+            <button type="button" className={path === '' ? 'current' : ''} onClick={(ev) => go(ev, '')}>root</button>
+            {path !== '' && path.split('/').map((seg, i, segs) => (
+              <span key={i}> / <button type="button" className={i === segs.length - 1 ? 'current' : ''} onClick={(ev) => go(ev, segs.slice(0, i + 1).join('/'))}>{seg}</button>
+            </span>
+            ))}
+          </div>
           {(entries ?? []).map((e) => (
-            <div key={e.name} className="file-row" onClick={() => (e.dir ? browse(joinP(path, e.name)) : (onChange(joinP(path, e.name)), setOpen(false)))}>
+            <button type="button" key={e.name} className="file-row" onClick={(ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (e.dir) browse(joinP(path, e.name));
+              else { onChange(joinP(path, e.name)); setOpen(false); }
+            }}>
               {e.dir ? '📁 ' : '📄 '}{e.name}
-            </div>
+            </button>
           ))}
           <button type="button" className="btn ghost" onClick={() => { onChange(path); setOpen(false); }}>Use this folder</button>
         </div>

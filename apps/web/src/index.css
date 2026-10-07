@@ -86,8 +86,11 @@ body { background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui
 .switch .knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left 0.12s; }
 .switch.on .knob { left: 18px; }
 .file-list { border: 1px solid var(--line); border-radius: 8px; margin-top: 6px; padding: 6px; max-height: 180px; overflow-y: auto; background: #fff; }
-.file-row { font-size: 12px; padding: 5px 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-row { font-size: 12px; padding: 5px 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; width: 100%; text-align: left; background: none; border: none; color: var(--ink); }
 .file-row:hover { background: #f0f0f0; }
+.file-crumbs { font-size: 11px; padding: 2px 8px 6px; color: var(--ink-3); }
+.file-crumbs button { background: none; border: none; padding: 0; font-size: 11px; color: var(--ink-2); cursor: pointer; text-decoration: underline; }
+.file-crumbs button.current { color: var(--ink); font-weight: 700; text-decoration: none; cursor: default; }
 .icon-preview { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
 .ff-node .kind { font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
 .ff-node.status-error { border-color: var(--err); box-shadow: 0 0 0 1px var(--err), 0 0 12px rgba(217, 38, 38, 0.45); }
