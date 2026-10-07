@@ -712,6 +712,17 @@ export default function App() {
             <>
               <h3>{String((selected.data as any).label)}</h3>
               <div className="desc">{defOf((selected.data as any).type)?.description}</div>
+              {defOf((selected.data as any).type)?.custom && defOf((selected.data as any).type)?.trust && (
+                <div className="desc">
+                  v{defOf((selected.data as any).type).trust.version} · {defOf((selected.data as any).type).trust.status} · by {defOf((selected.data as any).type).trust.author}
+                  {defOf((selected.data as any).type).trust.reusability && ` · ♻ ${defOf((selected.data as any).type).trust.reusability.score} ${defOf((selected.data as any).type).trust.reusability.grade}`}
+                </div>
+              )}
+              {defOf((selected.data as any).type)?.custom && (
+                <div style={{ marginBottom: 12 }}>
+                  <button className="btn ghost" onClick={() => { openEditCustom((selected.data as any).type); setShowLibrary(true); }}>Edit code in Library →</button>
+                </div>
+              )}
               {(defOf((selected.data as any).type)?.properties ?? []).map((p: any) => (
                 <label key={p.key} className="field">
                   <span>{p.displayName}</span>
@@ -719,6 +730,8 @@ export default function App() {
                     <select value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)}>
                       {p.options.map((o: any) => <option key={String(o.value)} value={o.value}>{o.name}</option>)}
                     </select>
+                  ) : p.type === 'code' && defOf((selected.data as any).type)?.custom ? (
+                    <textarea rows={3} value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)} placeholder="Value for this run — implementation lives in the Library" />
                   ) : p.type === 'code' || p.type === 'json' ? (
                     <React.Suspense fallback={<CodeFieldFallback height={p.type === 'code' ? 220 : 130} />}>
                       <CodeField

@@ -122,6 +122,14 @@ immediately. Custom nodes are actions only (triggers need server wiring).
 Each custom card has **Export** (`key.custom-node.json`) and the Library header
 has **Import** — share nodes as files, same as workflows.
 
+**Authoring vs orchestration:** the Library is the workshop (full Monaco,
+permissions, examples, versions). The workflow canvas is the control plane —
+a custom node there is a black box showing only its declared parameters
+(code-type params render as plain values, never the implementation), plus its
+trust line (version · status · author · ♻ score) and an **Edit code in
+Library →** teleport. One-off scripts belong in the built-in Code/Python
+nodes, whose code *is* their input.
+
 All `code`/`json` inspector fields (Code, Python, JSON bodies, …) also use
 Monaco now: JavaScript/Python/JSON highlighting, `vs-dark` to match the theme.
 
