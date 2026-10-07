@@ -72,11 +72,18 @@ function NodeIcon({ icon, custom }: { icon?: string; custom?: boolean }) {
   return mapped ? <span className="node-icon emoji">{mapped}</span> : null;
 }
 
-function PortNode({ data, selected }: NodeProps) {
+function PortNode({ data, selected, id }: NodeProps) {
   const d = data as any;
   const outs: number = d.outputs ?? 1;
+  const { deleteElements } = useReactFlow();
   return (
     <div className={`ff-node ${selected ? 'selected' : ''} ${d.status ? 'status-' + d.status : ''} ${d.collapsed ? 'is-collapsed' : ''}`}>
+      {selected && (
+        <button
+          className="node-delete nodrag" title="Delete node (or press Delete)"
+          onClick={(e) => { e.stopPropagation(); deleteElements({ nodes: [{ id }] }); }}
+        >×</button>
+      )}
       {d.kind !== 'trigger' && !d.collapsed && <Handle type="target" position={Position.Top} />}
       {d.collapsed && <Handle type="target" position={Position.Top} />}
       <div className="node-row">
