@@ -112,7 +112,8 @@ From a card you can **Add** it to the canvas, **Disable** it (hidden from the
 palette, remembered in the browser), and for your own nodes **Edit/Delete**.
 
 **+ New node**: key, display name, description, category, inspector fields
-(properties JSON), and a Monaco code editor (JS highlighting, dark, bundled
+(properties JSON), icon (emoji or uploaded picture, shown left of the node —
+pictures render grayscaled to match the theme), and a Monaco code editor (JS highlighting, dark, bundled
 locally — works offline, lazy-loaded). Same contract as the Code node —
 `items` and `params` in scope, return items or `{ branches }` — with a
 **Run test** button that executes the draft without saving. Saved nodes are

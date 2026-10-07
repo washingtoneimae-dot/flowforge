@@ -14,10 +14,12 @@ export interface CustomNodeInput {
   category?: string;
   properties?: NodeProperty[];
   code: string;
+  /** Emoji/short text or a data:image/... URL (≤200KB). Shown left of the node. */
+  icon?: string;
 }
 
 /** Validate a custom-node payload. Throws on the first problem. Returns normalized input. */
-export function validateCustomNode(body: unknown): { key: string; displayName: string; description: string; category: string; properties: NodeProperty[]; code: string } {
+export function validateCustomNode(body: unknown): { key: string; displayName: string; description: string; category: string; properties: NodeProperty[]; code: string; icon: string } {
   if (!body || typeof body !== 'object') throw new Error('body must be an object');
   const b = body as any;
   const key = String(b.key ?? '');
@@ -35,6 +37,11 @@ export function validateCustomNode(body: unknown): { key: string; displayName: s
     if (typeof p.displayName !== 'string' || !p.displayName) throw new Error(`properties[${i}].displayName is required`);
     if (!PROP_TYPES.has(p.type)) throw new Error(`properties[${i}].type must be one of ${[...PROP_TYPES].join(', ')}`);
   }
+  const icon = b.icon === undefined || b.icon === null ? '' : String(b.icon);
+  if (icon.length > 200_000) throw new Error('icon is too large (max ~200KB)');
+  if (icon && !icon.startsWith('data:image/') && [...icon].length > 16) {
+    throw new Error('icon must be an emoji/short label or an uploaded image');
+  }
   return {
     key,
     displayName,
@@ -42,6 +49,7 @@ export function validateCustomNode(body: unknown): { key: string; displayName: s
     category: String(b.category ?? 'custom') || 'custom',
     properties: properties as NodeProperty[],
     code,
+    icon,
   };
 }
 
@@ -78,7 +86,7 @@ export function rowToDefinition(row: CustomNodeRow): NodeDefinition {
     version: 1,
     kind: 'action',
     category: row.category || 'custom',
-    icon: 'puzzle',
+    icon: row.icon || 'puzzle',
     inputs: ['main'],
     outputs: ['main'],
     properties,

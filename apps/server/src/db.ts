@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS custom_nodes (
 );
 `);
 
+try {
+  db.exec(`ALTER TABLE custom_nodes ADD COLUMN icon TEXT NOT NULL DEFAULT ''`);
+} catch { /* column already exists */ }
+
 export interface WorkflowRow { id: string; name: string; definition: string; active: number; created_at: string; updated_at: string; }
 export interface ExecutionRow { id: string; workflow_id: string; status: string; result: string; started_at: string; finished_at: string; }
-export interface CustomNodeRow { key: string; display_name: string; description: string; category: string; properties: string; code: string; created_at: string; updated_at: string; }
+export interface CustomNodeRow { key: string; display_name: string; description: string; category: string; properties: string; code: string; icon: string; created_at: string; updated_at: string; }

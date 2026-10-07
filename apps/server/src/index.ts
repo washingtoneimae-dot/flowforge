@@ -60,7 +60,7 @@ app.get('/api/nodes', (_req, res) => {
 app.get('/api/custom-nodes', (_req, res) => {
   res.json(listCustomNodeRows().map((r) => ({
     key: r.key, displayName: r.display_name, description: r.description,
-    category: r.category, properties: JSON.parse(r.properties), code: r.code,
+    category: r.category, properties: JSON.parse(r.properties), code: r.code, icon: r.icon ?? '',
     created_at: r.created_at, updated_at: r.updated_at,
   })));
 });
@@ -72,8 +72,8 @@ app.post('/api/custom-nodes', (req, res) => {
       return res.status(409).json({ error: `key "${v.key}" is already used by a built-in node` });
     }
     const now = new Date().toISOString();
-    db.prepare('INSERT OR REPLACE INTO custom_nodes (key,display_name,description,category,properties,code,created_at,updated_at) VALUES (?,?,?,?,?,?,COALESCE((SELECT created_at FROM custom_nodes WHERE key=?),?),?)')
-      .run(v.key, v.displayName, v.description, v.category, JSON.stringify(v.properties), v.code, v.key, now, now);
+    db.prepare('INSERT OR REPLACE INTO custom_nodes (key,display_name,description,category,properties,code,icon,created_at,updated_at) VALUES (?,?,?,?,?,?,?,COALESCE((SELECT created_at FROM custom_nodes WHERE key=?),?),?)')
+      .run(v.key, v.displayName, v.description, v.category, JSON.stringify(v.properties), v.code, v.icon, v.key, now, now);
     refreshCustomNodes();
     res.status(201).json({ ok: true, key: v.key });
   } catch (e) { res.status(400).json({ error: (e as Error).message }); }

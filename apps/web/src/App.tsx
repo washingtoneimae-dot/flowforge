@@ -56,6 +56,13 @@ function computeBlocks(nodes: Array<{ id: string; data: any }>, edges: Array<{ s
 
 /* --------------------------------- nodes --------------------------------- */
 
+function NodeIcon({ icon }: { icon?: string }) {
+  if (!icon) return null;
+  if (icon.startsWith('data:image/')) return <span className="node-icon"><img src={icon} alt="" /></span>;
+  if (icon.length <= 16) return <span className="node-icon emoji">{icon}</span>;
+  return null;
+}
+
 function PortNode({ data, selected }: NodeProps) {
   const d = data as any;
   const outs: number = d.outputs ?? 1;
@@ -63,8 +70,13 @@ function PortNode({ data, selected }: NodeProps) {
     <div className={`ff-node ${selected ? 'selected' : ''} ${d.status ? 'status-' + d.status : ''} ${d.collapsed ? 'is-collapsed' : ''}`}>
       {d.kind !== 'trigger' && !d.collapsed && <Handle type="target" position={Position.Top} />}
       {d.collapsed && <Handle type="target" position={Position.Top} />}
-      <div className="title">{d.collapsed ? `▸ ${d.label}` : d.label}</div>
-      <div className="kind">{d.type === 'scriptStart' || d.type === 'scriptEnd' ? `script · ${d.blockId ?? ''}` : d.kind}</div>
+      <div className="node-row">
+        <NodeIcon icon={d.icon} />
+        <div>
+          <div className="title">{d.collapsed ? `▸ ${d.label}` : d.label}</div>
+          <div className="kind">{d.type === 'scriptStart' || d.type === 'scriptEnd' ? `script · ${d.blockId ?? ''}` : d.kind}</div>
+        </div>
+      </div>
       {d.collapsed
         ? (<>
             <div className="kind">{d.collapsedCount} nodes · click to expand in inspector</div>
@@ -157,7 +169,7 @@ export default function App() {
       setCollapsed(wf.definition.collapsed ?? []);
       setNodes(wf.definition.nodes.map((n: any) => ({
         id: n.id, type: 'port', position: n.position,
-        data: { label: n.label ?? defOf(n.type)?.displayName ?? n.type, type: n.type, params: n.params ?? {}, kind: defOf(n.type)?.kind ?? 'action', outputs: defOf(n.type)?.outputs?.length ?? 1, blockId: n.params?.blockId },
+        data: { label: n.label ?? defOf(n.type)?.displayName ?? n.type, type: n.type, params: n.params ?? {}, kind: defOf(n.type)?.kind ?? 'action', outputs: defOf(n.type)?.outputs?.length ?? 1, icon: defOf(n.type)?.icon, blockId: n.params?.blockId },
       })));
       setEdges(wf.definition.edges.map((e: any, i: number) => ({ id: `e${i}`, type: 'deletable', source: e.from, target: e.to, sourceHandle: String(e.fromIndex ?? 0) })));
     });
@@ -187,7 +199,7 @@ export default function App() {
     const params: any = {};
     for (const p of def.properties ?? []) params[p.key] = p.default;
     if (def.key === 'scriptStart' || def.key === 'scriptEnd') params.blockId = `script-${nodes.length + 1}`;
-    setNodes((ns) => [...ns, { id: nid, type: 'port', position: { x: 120 + ns.length * 40, y: 80 + ns.length * 60 }, data: { label: def.displayName, type: def.key, params, kind: def.kind, outputs: def.outputs?.length ?? 1, blockId: params.blockId } }]);
+    setNodes((ns) => [...ns, { id: nid, type: 'port', position: { x: 120 + ns.length * 40, y: 80 + ns.length * 60 }, data: { label: def.displayName, type: def.key, params, kind: def.kind, outputs: def.outputs?.length ?? 1, icon: def.icon, blockId: params.blockId } }]);
   };
 
   const selected = nodes.find((n) => n.id === selectedId);
@@ -390,7 +402,7 @@ export default function App() {
   };
 
   const openNewCustom = () => {
-    setEditing({ key: '', displayName: '', description: '', category: 'custom', properties: '[]', code: '// items: [{ json }], params: your fields\nreturn items.map(i => ({ json: { ...i.json } }));' });
+    setEditing({ key: '', displayName: '', description: '', category: 'custom', icon: '', properties: '[]', code: '// items: [{ json }], params: your fields\nreturn items.map(i => ({ json: { ...i.json } }));' });
     setEditError(null);
     setEditTestResult(null);
     setCustomTestInput('[{"json":{}}]');
@@ -415,7 +427,7 @@ export default function App() {
     } catch (e) { setEditError(`Bad properties JSON: ${(e as Error).message}`); return; }
     const r = await api('/api/custom-nodes', {
       method: 'POST',
-      body: JSON.stringify({ key: editing.key, displayName: editing.displayName, description: editing.description, category: editing.category || 'custom', properties, code: editing.code }),
+      body: JSON.stringify({ key: editing.key, displayName: editing.displayName, description: editing.description, category: editing.category || 'custom', icon: editing.icon || '', properties, code: editing.code }),
     });
     if (r.error) { setEditError(r.error); return; }
     await refreshNodes();
@@ -655,6 +667,25 @@ export default function App() {
                     <input value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} placeholder="What it does" /></label>
                   <label className="field"><span>Category</span>
                     <input value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })} placeholder="custom" /></label>
+                  <label className="field"><span>Icon — emoji, or upload a picture (shown left of the node)</span>
+                    <div className="row">
+                      <input value={editing.icon ?? ''} onChange={(e) => setEditing({ ...editing, icon: e.target.value })} placeholder="✉️" />
+                      <label className="btn ghost" style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}>Upload
+                        <input type="file" accept="image/*" style={{ display: 'none' }}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (!f) return;
+                            if (f.size > 200_000) { alert('Image too large — max ~200KB.'); e.target.value = ''; return; }
+                            const rd = new FileReader();
+                            rd.onload = () => setEditing((ed: any) => ({ ...ed, icon: String(rd.result ?? '') }));
+                            rd.readAsDataURL(f);
+                            e.target.value = '';
+                          }} />
+                      </label>
+                      {editing.icon && <button className="btn ghost" onClick={() => setEditing({ ...editing, icon: '' })}>Clear</button>}
+                    </div>
+                    {editing.icon && <div className="icon-preview"><NodeIcon icon={editing.icon} /><small className="muted">preview</small></div>}
+                  </label>
                   <label className="field"><span>Properties (JSON array of fields shown in the inspector)</span>
                     <React.Suspense fallback={<CodeFieldFallback height={130} />}>
                       <CodeField height={130} language="json" value={editing.properties} onChange={(v) => setEditing({ ...editing, properties: v })} />
@@ -689,7 +720,7 @@ export default function App() {
                 <div className="lib-grid">
                   {libNodes.map((d) => (
                     <div key={d.key} className={`lib-card ${disabled.includes(d.key) ? 'is-disabled' : ''}`}>
-                      <div className="lib-card-title">{d.displayName}</div>
+                      <div className="lib-card-title node-row"><NodeIcon icon={d.icon} />{d.displayName}</div>
                       <div className="lib-badges">
                         <span className="badge">{d.kind}</span>
                         <span className="badge">{d.category ?? 'other'}</span>

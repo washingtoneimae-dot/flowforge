@@ -177,9 +177,10 @@ tool(
     category: z.string().optional().describe('Library grouping (default "custom")'),
     properties: z.array(z.any()).optional().describe('Inspector fields: [{ key, displayName, type, default, required }]'),
     code: z.string().describe('JavaScript body, e.g. "return items.map(i => ({ json: i.json }));"'),
+    icon: z.string().optional().describe('Emoji or data:image/... URL shown left of the node'),
   },
-  async ({ key, displayName, description, category, properties, code }) =>
-    text(await ff('/api/custom-nodes', 'POST', { key, displayName, description: description ?? '', category: category ?? 'custom', properties: properties ?? [], code })),
+  async ({ key, displayName, description, category, properties, code, icon }) =>
+    text(await ff('/api/custom-nodes', 'POST', { key, displayName, description: description ?? '', category: category ?? 'custom', properties: properties ?? [], code, icon: icon ?? '' })),
 );
 
 tool(
