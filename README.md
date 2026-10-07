@@ -49,6 +49,10 @@ graph with bounded concurrency, per-node timeouts, branch routing (If/Switch/Fil
 route items to different output handles), and execution history persisted in SQLite
 (WAL, last 200 runs per workflow).
 
+Terminology: the **Canvas** is the home view where workflows are built and run
+(orchestration); the **Library** is the node workshop where nodes are authored,
+tested, approved, and versioned.
+
 ## Built-in nodes
 
 | Node | Kind | Description |
