@@ -2,6 +2,7 @@ import express from 'express';
 import { db, WorkflowRow, ExecutionRow } from './db.js';
 import { nodeRegistry, resolveNode, isCustomNode, categoryOf, refreshCustomNodes } from './registry.js';
 import { validateCustomNode, runCustomCode, listCustomNodeRows } from './customNodes.js';
+import { loadMcpConfig, saveMcpConfig, mcpDistExists, MCP_TOOL_NAMES } from '@flowforge/node-sdk';
 import { toExportDoc, parseImportDoc } from './workflowIo.js';
 import { executeWorkflow, Workflow } from '@flowforge/engine';
 import { mkdirSync, watch } from 'node:fs';
@@ -10,6 +11,38 @@ import { fileURLToPath } from 'node:url';
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
+
+// Repo root (server runs from apps/server/dist or apps/server/src).
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+function mcpSettings() {
+  const config = loadMcpConfig(repoRoot);
+  const distAbs = join(repoRoot, 'apps', 'mcp', 'dist', 'index.js');
+  return {
+    built: mcpDistExists(repoRoot),
+    distPath: distAbs,
+    command: 'node',
+    args: [distAbs],
+    flowforgeUrl: config.flowforgeUrl,
+    disabledTools: config.disabledTools,
+    tools: MCP_TOOL_NAMES.map((name) => ({ name, enabled: !config.disabledTools.includes(name) })),
+  };
+}
+
+app.get('/api/settings/mcp', (_req, res) => {
+  res.json(mcpSettings());
+});
+
+app.put('/api/settings/mcp', (req, res) => {
+  try {
+    const current = loadMcpConfig(repoRoot);
+    const saved = saveMcpConfig(repoRoot, {
+      flowforgeUrl: typeof req.body?.flowforgeUrl === 'string' ? req.body.flowforgeUrl : current.flowforgeUrl,
+      disabledTools: Array.isArray(req.body?.disabledTools) ? req.body.disabledTools : current.disabledTools,
+    });
+    res.json({ ...mcpSettings(), flowforgeUrl: saved.flowforgeUrl, disabledTools: saved.disabledTools });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
 
 const id = () => `wf_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 

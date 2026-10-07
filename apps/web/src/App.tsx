@@ -129,6 +129,14 @@ export default function App() {
   const [editTestResult, setEditTestResult] = useState<any>(null);
   const [customTestInput, setCustomTestInput] = useState('[{"json":{}}]');
 
+  // settings / MCP setup
+  const [showSettings, setShowSettings] = useState(false);
+  const [mcp, setMcp] = useState<any>(null);
+  const [draftUrl, setDraftUrl] = useState('');
+  const [draftDisabled, setDraftDisabled] = useState<string[]>([]);
+  const [settingsClient, setSettingsClient] = useState('claude-code');
+  const [copied, setCopied] = useState(false);
+
   useEffect(() => { api('/api/nodes').then(setNodeDefs); api('/api/workflows').then(setWorkflows); }, []);
   const refreshNodes = useCallback(() => api('/api/nodes').then(setNodeDefs), []);
 
@@ -339,6 +347,48 @@ export default function App() {
     return d.displayName.toLowerCase().includes(q) || d.key.toLowerCase().includes(q) || (d.description ?? '').toLowerCase().includes(q);
   }), [nodeDefs, libSearch, libCat]);
 
+  const openSettings = async () => {
+    const s = await api('/api/settings/mcp');
+    setMcp(s);
+    setDraftUrl(s.flowforgeUrl);
+    setDraftDisabled(s.disabledTools ?? []);
+    setCopied(false);
+    setShowSettings(true);
+  };
+
+  const saveSettings = async () => {
+    const s = await api('/api/settings/mcp', { method: 'PUT', body: JSON.stringify({ flowforgeUrl: draftUrl, disabledTools: draftDisabled }) });
+    setMcp(s);
+    setDraftUrl(s.flowforgeUrl);
+    setDraftDisabled(s.disabledTools ?? []);
+  };
+
+  const toggleTool = (name: string) =>
+    setDraftDisabled((ds) => (ds.includes(name) ? ds.filter((t) => t !== name) : [...ds, name]));
+
+  const copyText = async (t: string) => {
+    try { await navigator.clipboard.writeText(t); } catch {
+      const ta = document.createElement('textarea');
+      ta.value = t; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const mcpJsonSnippet = mcp ? JSON.stringify({ mcpServers: { flowforge: { command: mcp.command, args: mcp.args, env: { FLOWFORGE_URL: draftUrl || mcp.flowforgeUrl } } } }, null, 2) : '';
+  const mcpClaudeCmd = mcp ? `claude mcp add flowforge -e FLOWFORGE_URL=${draftUrl || mcp.flowforgeUrl} -- node ${mcp.distPath}` : '';
+
+  const TOOL_BLURBS: Record<string, string> = {
+    list_nodes: 'Browse the node catalog', describe_node: 'Read a node’s parameter schema',
+    list_workflows: 'List workflows', get_workflow: 'Read a workflow definition',
+    create_workflow: 'Create workflows', update_workflow: 'Edit workflows', delete_workflow: 'Delete workflows',
+    run_workflow: 'Execute workflows', test_node: 'Run a single node',
+    create_custom_node: 'Author new nodes', delete_custom_node: 'Delete custom nodes',
+    export_workflow: 'Export workflow JSON', import_workflow: 'Import workflow JSON',
+    list_executions: 'Read run history',
+  };
+
   const openNewCustom = () => {
     setEditing({ key: '', displayName: '', description: '', category: 'custom', properties: '[]', code: '// items: [{ json }], params: your fields\nreturn items.map(i => ({ json: { ...i.json } }));' });
     setEditError(null);
@@ -426,6 +476,7 @@ export default function App() {
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> active
         </label>
         <div className="spacer" />
+        <button className="btn ghost" onClick={openSettings} title="Settings">⚙</button>
         <button className="btn ghost" onClick={() => setShowLibrary(true)}>Library</button>
         <button className="btn ghost" onClick={newWorkflow}>New</button>
         <button className="btn ghost" onClick={exportWorkflow} disabled={!currentId} title={currentId ? 'Download workflow JSON' : 'Save first'}>Export</button>
@@ -524,6 +575,59 @@ export default function App() {
           )}
         </aside>
       </div>
+
+      {showSettings && (
+        <div className="overlay" onClick={() => setShowSettings(false)}>
+          <div className="library settings" onClick={(e) => e.stopPropagation()}>
+            <div className="lib-head">
+              <h2>Settings — AI agent setup (MCP)</h2>
+              <div className="spacer" />
+              <button className="btn ghost" onClick={() => setShowSettings(false)}>Close</button>
+            </div>
+            {!mcp ? <p className="muted">Loading…</p> : (
+              <>
+                <div className={`status-card ${mcp.built ? 'ok' : 'warn'}`}>
+                  {mcp.built
+                    ? `MCP server built — ${mcp.tools.filter((t: any) => t.enabled).length}/${mcp.tools.length} tools enabled. Restart the MCP client after changing settings.`
+                    : <>MCP server not built. Run <code>pnpm --filter @flowforge/mcp build</code>, then reopen this page.</>}
+                </div>
+                <h3>Public URL</h3>
+                <div className="desc">Baked into the client snippets below as FLOWFORGE_URL. Use your LAN/tunnel address if the agent runs on another machine.</div>
+                <div className="row">
+                  <input value={draftUrl} onChange={(e) => setDraftUrl(e.target.value)} placeholder="http://localhost:3000" />
+                  <button className="btn" onClick={saveSettings}>Save</button>
+                </div>
+                <h3>Connect a client</h3>
+                <div className="row">
+                  <select value={settingsClient} onChange={(e) => setSettingsClient(e.target.value)}>
+                    <option value="claude-code">Claude Code (CLI)</option>
+                    <option value="claude-desktop">Claude Desktop</option>
+                    <option value="generic">Generic (JSON)</option>
+                  </select>
+                  <button className="btn" onClick={() => copyText(settingsClient === 'claude-code' ? mcpClaudeCmd : mcpJsonSnippet)}>
+                    {copied ? 'Copied ✓' : 'Copy'}
+                  </button>
+                </div>
+                <pre className="snippet">{settingsClient === 'claude-code' ? mcpClaudeCmd : mcpJsonSnippet}</pre>
+                <div className="desc">Flowforge itself must be running first — the MCP server probes it and refuses to start otherwise.</div>
+                <h3>Tools exposed to agents</h3>
+                <div className="desc">Uncheck to hide a tool. Takes effect when the MCP server (re)starts.</div>
+                <div className="tool-grid">
+                  {mcp.tools.map((t: any) => (
+                    <label key={t.name} className={`tool-check ${draftDisabled.includes(t.name) ? 'off' : ''}`}>
+                      <input type="checkbox" checked={!draftDisabled.includes(t.name)} onChange={() => toggleTool(t.name)} />
+                      <span><b>{t.name}</b><br /><small className="muted">{TOOL_BLURBS[t.name] ?? ''}</small></span>
+                    </label>
+                  ))}
+                </div>
+                <div className="row" style={{ marginTop: 12 }}>
+                  <button className="btn primary" onClick={saveSettings}>Save settings</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {showLibrary && (
         <div className="overlay" onClick={() => { setShowLibrary(false); setEditing(null); }}>

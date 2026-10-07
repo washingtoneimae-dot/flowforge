@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@flowforge/node-sdk": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "zod": "^3.25.0"
   },

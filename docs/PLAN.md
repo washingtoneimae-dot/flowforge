@@ -25,6 +25,7 @@
 - [x] Node Library: categories, search, enable/disable, custom-node creator with code editor + draft test
 - [x] Script Start/End markers: collapsible, nestable script blocks
 - [x] MCP server: agents browse/describe nodes, CRUD + run workflows, author custom nodes
+- [x] Settings page: MCP status, client configs (Claude Code/Desktop), public URL, tool toggles
 
 ## Next
 

@@ -14,6 +14,9 @@ importers:
 
   apps/mcp:
     dependencies:
+      '@flowforge/node-sdk':
+        specifier: workspace:*
+        version: link:../../packages/node-sdk
       '@modelcontextprotocol/sdk':
         specifier: ^1.17.0
         version: 1.32.1(zod@3.25.76)
@@ -108,6 +111,9 @@ importers:
 
   packages/node-sdk:
     devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.5
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

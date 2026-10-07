@@ -86,6 +86,23 @@ pre.run { background: #111; color: #eee; border-radius: 8px; padding: 10px; font
 .lib-card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .lib-card-actions .btn { padding: 4px 10px; font-size: 11px; }
 
+/* settings */
+.library.settings { max-height: 88vh; overflow-y: auto; }
+.library.settings h3 { margin: 16px 0 4px; font-size: 13px; }
+.library.settings .desc { color: var(--ink-3); font-size: 11px; margin-bottom: 8px; }
+.library.settings .row { display: flex; gap: 8px; }
+.library.settings .row input, .library.settings .row select { flex: 1; border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 10px; font-size: 12px; background: #fff; }
+.library.settings .row select { flex: 0 1 240px; }
+.status-card { border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px; font-size: 12px; background: #fff; }
+.status-card.ok { border-left: 4px solid #111; }
+.status-card.warn { border-left: 4px dashed #111; }
+.status-card code { background: #f0f0f0; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+pre.snippet { background: #111; color: #eee; border-radius: 8px; padding: 12px; font-size: 11px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+.tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+.tool-check { display: flex; gap: 8px; align-items: flex-start; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; cursor: pointer; }
+.tool-check.off { opacity: 0.55; }
+.tool-check b { font-family: ui-monospace, monospace; font-size: 11px; }
+
 /* custom node editor */
 .editor { display: flex; gap: 16px; overflow-y: auto; }
 .editor-form { width: 320px; flex-shrink: 0; }

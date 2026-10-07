@@ -1,3 +1,5 @@
+export * from './mcpConfig.js';
+
 /** A unit of data flowing through the workflow. Mirrors n8n's `{ json }` shape. */
 export interface FlowItem {
   json: Record<string, unknown>;

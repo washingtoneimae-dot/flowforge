@@ -9,6 +9,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { loadMcpConfig } from '@flowforge/node-sdk';
 import { normalizeDefinition, summarizeRun } from './workflow.js';
 
 const BASE = (process.env.FLOWFORGE_URL ?? 'http://localhost:3000').replace(/\/$/, '');
@@ -46,7 +49,19 @@ const EdgeSchema = z.object({
 
 const server = new McpServer({ name: 'flowforge', version: '0.1.0' });
 
-server.tool(
+// Tools disabled on the Settings page are never registered (restart MCP to apply).
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const disabledTools = new Set(loadMcpConfig(repoRoot).disabledTools);
+type ToolHandler = (args: any) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+const tool = (name: string, description: string, shape: any, handler: ToolHandler) => {
+  if (disabledTools.has(name)) {
+    console.error(`[flowforge-mcp] tool disabled by settings: ${name}`);
+    return;
+  }
+  server.tool(name, description, shape, handler);
+};
+
+tool(
   'list_nodes',
   'List available node types. Filter by category (triggers, logic, data, code, network, files, flow, custom), kind (trigger, action) or free-text search.',
   { category: z.string().optional(), kind: z.string().optional(), search: z.string().optional() },
@@ -61,7 +76,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   'describe_node',
   'Full schema for one node type: its parameters (key, type, required, defaults, options) plus inputs/outputs. Call this before create_workflow or test_node.',
   { key: z.string().describe('Node type key, e.g. "httpRequest"') },
@@ -73,21 +88,21 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   'list_workflows',
   'List stored workflows (id, name, active flag).',
   {},
   async () => text(await ff('/api/workflows')),
 );
 
-server.tool(
+tool(
   'get_workflow',
   'Fetch one workflow including its full node/edge definition.',
   { id: z.string() },
   async ({ id }) => text(await ff(`/api/workflows/${id}`)),
 );
 
-server.tool(
+tool(
   'create_workflow',
   'Create a workflow. Node ids and canvas positions are optional — omit them for quick drafts. Edge fromIndex selects the output branch on multi-output nodes.',
   {
@@ -98,7 +113,7 @@ server.tool(
   async ({ name, nodes, edges }) => text(await ff('/api/workflows', 'POST', { name, definition: normalizeDefinition({ nodes, edges }) })),
 );
 
-server.tool(
+tool(
   'update_workflow',
   'Replace the definition (and optionally name/active flag) of an existing workflow.',
   {
@@ -124,14 +139,14 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   'delete_workflow',
   'Delete a workflow and its definition.',
   { id: z.string() },
   async ({ id }) => text(await ff(`/api/workflows/${id}`, 'DELETE')),
 );
 
-server.tool(
+tool(
   'run_workflow',
   'Execute a workflow now. Returns per-node status, item counts, a 2-item preview per node, and errors.',
   {
@@ -141,7 +156,7 @@ server.tool(
   async ({ id, items }) => text(summarizeRun(await ff(`/api/workflows/${id}/run`, 'POST', { items: items ?? [] }))),
 );
 
-server.tool(
+tool(
   'test_node',
   'Run a single node type with given params and items. Fast way to validate params before wiring a workflow.',
   {
@@ -152,7 +167,7 @@ server.tool(
   async ({ key, params, items }) => text(await ff(`/api/nodes/${key}/test`, 'POST', { params: params ?? {}, items: items ?? [{ json: {} }] })),
 );
 
-server.tool(
+tool(
   'create_custom_node',
   'Author a new action node. Code runs sandboxed with `items` and `params` in scope; return items or `{ branches }`. Usable in workflows immediately under `key`.',
   {
@@ -167,28 +182,28 @@ server.tool(
     text(await ff('/api/custom-nodes', 'POST', { key, displayName, description: description ?? '', category: category ?? 'custom', properties: properties ?? [], code })),
 );
 
-server.tool(
+tool(
   'delete_custom_node',
   'Delete a UI-created custom node.',
   { key: z.string() },
   async ({ key }) => text(await ff(`/api/custom-nodes/${key}`, 'DELETE')),
 );
 
-server.tool(
+tool(
   'export_workflow',
   'Export a workflow as a portable JSON document (share it or store it in git).',
   { id: z.string() },
   async ({ id }) => text(await ff(`/api/workflows/${id}/export`)),
 );
 
-server.tool(
+tool(
   'import_workflow',
   'Import a workflow from an export document (or bare { nodes, edges }).',
   { document: z.record(z.any()).describe('Export doc, { name, definition } or { nodes, edges }') },
   async ({ document }) => text(await ff('/api/workflows/import', 'POST', document)),
 );
 
-server.tool(
+tool(
   'list_executions',
   'Recent execution history, optionally filtered to one workflow.',
   { workflowId: z.string().optional() },

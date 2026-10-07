@@ -173,6 +173,11 @@ Point any MCP client at it (Flowforge itself must be running):
 resource. Typical agent loop: `describe_node` → `create_custom_node` (if no
 fit) → `create_workflow` → `run_workflow` → fix from errors → repeat.
 
+Setup lives in the UI: topbar **⚙ Settings** shows MCP status (built or not),
+generates copy-paste configs for Claude Code / Claude Desktop / generic
+clients, stores the public URL, and toggles which tools agents may use
+(`GET/PUT /api/settings/mcp`, persisted in `data/mcp-config.json`).
+
 ## Testing a single node
 
 Select a node → **Run test** in the inspector. Edit the test input
