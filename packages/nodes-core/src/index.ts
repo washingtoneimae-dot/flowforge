@@ -14,7 +14,7 @@ const execFileAsync = promisify(execFile);
 export const manualTrigger = defineNode({
   key: 'manualTrigger',
   displayName: 'Manual Trigger',
-  description: 'Starts the workflow when run manually from the editor.',
+  description: 'Runs the workflow on demand from the editor → passes run items through (or one { ok: true } item).',
   version: 1,
   kind: 'trigger',
   icon: 'play',
@@ -29,7 +29,7 @@ export const manualTrigger = defineNode({
 export const webhookTrigger = defineNode({
   key: 'webhookTrigger',
   displayName: 'Webhook Trigger',
-  description: 'Starts the workflow when an HTTP request hits the webhook URL.',
+  description: 'Starts the workflow on requests to /hook/:path → emits { method, query, body, headers }.',
   version: 1,
   kind: 'trigger',
   icon: 'webhook',
@@ -46,7 +46,7 @@ export const webhookTrigger = defineNode({
 export const cronTrigger = defineNode({
   key: 'cronTrigger',
   displayName: 'Cron Trigger',
-  description: 'Starts the workflow on a schedule.',
+  description: 'Starts the workflow every N seconds → emits { scheduled: true, at }.',
   version: 1,
   kind: 'trigger',
   icon: 'clock',
@@ -65,7 +65,7 @@ export const cronTrigger = defineNode({
 export const httpRequest = defineNode({
   key: 'httpRequest',
   displayName: 'HTTP Request',
-  description: 'Makes an HTTP request and returns the response.',
+  description: 'Sends an HTTP request with {{ }}-aware URL/headers/body → appends { status, ok, data } per item.',
   version: 1,
   kind: 'action',
   icon: 'globe',
@@ -104,7 +104,7 @@ export const httpRequest = defineNode({
 export const setFields = defineNode({
   key: 'setFields',
   displayName: 'Set / Edit Fields',
-  description: 'Add, modify or remove fields on each item.',
+  description: 'Merges a JSON object into each item ({{ }}-aware values) → same items with new fields.',
   version: 1,
   kind: 'action',
   icon: 'pen',
@@ -136,7 +136,7 @@ function resolveValue(v: unknown, json: Record<string, unknown>): unknown {
 export const ifNode = defineNode({
   key: 'if',
   displayName: 'If',
-  description: 'Route items based on a condition. Output 0 = true, output 1 = false.',
+  description: 'Splits items on a condition → output 0 true, output 1 false.',
   version: 1,
   kind: 'action',
   icon: 'split',
@@ -170,7 +170,7 @@ export const ifNode = defineNode({
 export const switchNode = defineNode({
   key: 'switch',
   displayName: 'Switch',
-  description: 'Route items to different outputs based on a value. Output 0 = first case … last output = default.',
+  description: 'Routes each item by matching value against cases → one output per case, last is default.',
   version: 1,
   kind: 'action',
   icon: 'fork',
@@ -198,7 +198,7 @@ export const switchNode = defineNode({
 export const filterNode = defineNode({
   key: 'filter',
   displayName: 'Filter',
-  description: 'Keep only items matching a condition. Output 0 = kept, output 1 = discarded.',
+  description: 'Keeps matching items and drops the rest → output 0 kept, output 1 discarded.',
   version: 1,
   kind: 'action',
   icon: 'filter',
@@ -232,7 +232,7 @@ export const filterNode = defineNode({
 export const mergeNode = defineNode({
   key: 'merge',
   displayName: 'Merge',
-  description: 'Combine items from multiple inputs into one stream.',
+  description: 'Combines multiple input streams → one stream with every item.',
   version: 1,
   kind: 'action',
   icon: 'merge',
@@ -247,7 +247,7 @@ export const mergeNode = defineNode({
 export const codeNode = defineNode({
   key: 'code',
   displayName: 'Code (JavaScript)',
-  description: 'Run JavaScript against the items. Return an array of { json } objects.',
+  description: 'Runs sandboxed JavaScript with items in scope → must return an array of items.',
   version: 1,
   kind: 'action',
   icon: 'code',
@@ -270,7 +270,7 @@ export const codeNode = defineNode({
 export const pythonCodeNode = defineNode({
   key: 'pythonCode',
   displayName: 'Python',
-  description: 'Run a Python script. Items are available via the FLOW_ITEMS env var. Print a JSON array of {"json": ...} items.',
+  description: 'Runs a Python script with items via FLOW_ITEMS → must print a JSON array of items.',
   version: 1,
   kind: 'action',
   icon: 'terminal',
@@ -304,7 +304,7 @@ export const pythonCodeNode = defineNode({
 export const noOpNode = defineNode({
   key: 'noOp',
   displayName: 'NoOp',
-  description: 'Pass items through unchanged. Useful as a placeholder.',
+  description: 'Does nothing → passes items through unchanged.',
   version: 1,
   kind: 'action',
   icon: 'circle',
@@ -319,7 +319,7 @@ export const noOpNode = defineNode({
 export const waitNode = defineNode({
   key: 'wait',
   displayName: 'Wait',
-  description: 'Pause the workflow for a number of milliseconds.',
+  description: 'Pauses the run for N ms (max 30s) → same items, delayed.',
   version: 1,
   kind: 'action',
   icon: 'hourglass',
@@ -338,7 +338,7 @@ export const waitNode = defineNode({
 export const splitOutNode = defineNode({
   key: 'splitOut',
   displayName: 'Split Out',
-  description: 'Turn an array field on each item into multiple items (n8n "Item Lists"-style split).',
+  description: 'Expands an array field into one item per element → many items.',
   version: 1,
   kind: 'action',
   icon: 'list',
@@ -365,7 +365,7 @@ export const splitOutNode = defineNode({
 export const aggregateNode = defineNode({
   key: 'aggregate',
   displayName: 'Aggregate',
-  description: 'Combine all incoming items into a single item under a field.',
+  description: 'Folds all items into one → single item { <field>: [...], count }.',
   version: 1,
   kind: 'action',
   icon: 'layers',
@@ -383,7 +383,7 @@ export const aggregateNode = defineNode({
 export const datetimeNode = defineNode({
   key: 'datetime',
   displayName: 'Date & Time',
-  description: 'Add timestamp fields to each item.',
+  description: 'Stamps each item with the current time → same items plus the time field.',
   version: 1,
   kind: 'action',
   icon: 'calendar',
@@ -404,7 +404,7 @@ export const datetimeNode = defineNode({
 export const cryptoNode = defineNode({
   key: 'crypto',
   displayName: 'Crypto',
-  description: 'Hash a value or generate a random id (n8n Crypto-style).',
+  description: 'Hashes a value or mints a UUID → same items plus the output field.',
   version: 1,
   kind: 'action',
   icon: 'key',
@@ -431,7 +431,7 @@ export const cryptoNode = defineNode({
 export const jsonParseNode = defineNode({
   key: 'jsonParse',
   displayName: 'JSON Parse',
-  description: 'Parse a JSON string field into an object.',
+  description: 'Parses a JSON-string field into an object → same items with the field parsed.',
   version: 1,
   kind: 'action',
   icon: 'braces',
@@ -452,7 +452,7 @@ export const jsonParseNode = defineNode({
 export const sendEmailNode = defineNode({
   key: 'sendEmail',
   displayName: 'Send Email',
-  description: 'Send an email. Dry-run unless SMTP env vars (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM) are set — wire up real SMTP by extending this node.',
+  description: 'Sends an email (dry-run without SMTP env vars) → same items plus a delivery record.',
   version: 1,
   kind: 'action',
   icon: 'mail',
@@ -482,7 +482,7 @@ const sandboxDir = () => join(process.cwd(), 'data/sandbox');
 export const fileOpsNode = defineNode({
   key: 'fileOps',
   displayName: 'File',
-  description: 'Read, write or list files under data/sandbox (or an absolute path).',
+  description: 'Reads, writes, or lists files (sandbox or absolute path) → same items plus the result.',
   version: 1,
   kind: 'action',
   icon: 'folder',
@@ -524,7 +524,7 @@ export const fileOpsNode = defineNode({
 export const scriptStart = defineNode({
   key: 'scriptStart',
   displayName: 'Script Start',
-  description: 'Marks where a named script block begins. Pair with a Script End using the same Block ID. Collapse the block in the editor to see it as one node.',
+  description: 'Opens a named script block (same Block ID as its End) → passes items through; collapsible on canvas.',
   version: 1,
   kind: 'action',
   category: 'code',
@@ -542,7 +542,7 @@ export const scriptStart = defineNode({
 export const scriptEnd = defineNode({
   key: 'scriptEnd',
   displayName: 'Script End',
-  description: 'Marks where a named script block ends. Pair with a Script Start using the same Block ID. Blocks nest: put one pair inside another.',
+  description: 'Closes a named script block → passes items through; blocks nest inside each other.',
   version: 1,
   kind: 'action',
   category: 'code',

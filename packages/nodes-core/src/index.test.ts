@@ -102,6 +102,12 @@ describe('registry', () => {
       expect(nodeCategories[n.key], n.key).toBeTruthy();
     }
   });
+  it('every description follows the Action → Output contract', () => {
+    for (const n of coreNodes) {
+      expect(n.description.length, n.key).toBeGreaterThan(20);
+      expect(n.description, n.key).toMatch(/→/);
+    }
+  });
 });
 
 describe('script markers', () => {
