@@ -131,6 +131,16 @@ export default function App() {
   const [testResult, setTestResult] = useState<any>(null);
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [disabled, setDisabled] = useState<string[]>(loadDisabled);
+  const [collapsedCats, setCollapsedCats] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('ff.collapsedCats') ?? '[]'); } catch { return []; }
+  });
+
+  const toggleCat = (cat: string) =>
+    setCollapsedCats((cs) => {
+      const next = cs.includes(cat) ? cs.filter((c) => c !== cat) : [...cs, cat];
+      localStorage.setItem('ff.collapsedCats', JSON.stringify(next));
+      return next;
+    });
 
   // library
   const [showLibrary, setShowLibrary] = useState(false);
@@ -582,8 +592,12 @@ export default function App() {
         <aside className="sidebar">
           {paletteGroups.map(([cat, defs]) => (
             <div key={cat}>
-              <h2>{catLabel(cat)}</h2>
-              {defs.map((d) => <button key={d.key} className="node-btn" onClick={() => addNode(d)}>{d.displayName}<small>+</small></button>)}
+              <button className="cat-head" onClick={() => toggleCat(cat)} title={collapsedCats.includes(cat) ? 'Expand' : 'Collapse'}>
+                <span className="cat-arrow">{collapsedCats.includes(cat) ? '▸' : '▾'}</span>
+                {catLabel(cat)}
+                <span className="cat-count">{defs.length}</span>
+              </button>
+              {!collapsedCats.includes(cat) && defs.map((d) => <button key={d.key} className="node-btn" onClick={() => addNode(d)}>{d.displayName}<small>+</small></button>)}
             </div>
           ))}
           <h2>Workflows</h2>
