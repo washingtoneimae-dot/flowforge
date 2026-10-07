@@ -7,3 +7,5 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 data/sandbox/imports/
+data/sandbox/
+data/mcp-config.json
