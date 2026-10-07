@@ -793,15 +793,7 @@ export default function App() {
                   ) : p.type === 'code' && defOf((selected.data as any).type)?.custom ? (
                     <textarea rows={3} value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)} placeholder="Value for this run — implementation lives in the Library" />
                   ) : p.type === 'code' || p.type === 'json' ? (
-                    <React.Suspense fallback={<CodeFieldFallback height={p.type === 'code' ? 220 : 130} />}>
-                      <CodeField
-                        height={p.type === 'code' ? 220 : 130}
-                        language={p.type === 'json' ? 'json' : ((selected.data as any).type === 'pythonCode' ? 'python' : 'javascript')}
-                        path={`node-${(selected.data as any).type}-${p.key}`}
-                        value={String((selected.data as any).params?.[p.key] ?? '')}
-                        onChange={(v) => setParam(p, v)}
-                      />
-                    </React.Suspense>
+                    <textarea rows={p.type === 'code' ? 8 : 4} value={String((selected.data as any).params?.[p.key] ?? '')} onChange={(e) => setParam(p, e.target.value)} spellCheck={false} />
                   ) : p.type === 'number' ? (
                     <input type="number" value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, Number(e.target.value))} />
                   ) : (

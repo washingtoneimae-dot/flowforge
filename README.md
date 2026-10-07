@@ -125,10 +125,10 @@ has **Import** — share nodes as files, same as workflows.
 **Authoring vs orchestration:** the Library is the workshop (full Monaco,
 permissions, examples, versions). The workflow canvas is the control plane —
 a custom node there is a black box showing only its declared parameters
-(code-type params render as plain values, never the implementation), plus its
+(code and JSON render as plain mono textareas, never an editor), plus its
 trust line (version · status · author · ♻ score) and an **Edit code in
 Library →** teleport. One-off scripts belong in the built-in Code/Python
-nodes, whose code *is* their input.
+nodes, whose code is edited as plain text on the canvas.
 
 All `code`/`json` inspector fields (Code, Python, JSON bodies, …) also use
 Monaco now: JavaScript/Python/JSON highlighting, `vs-dark` to match the theme.
@@ -297,7 +297,8 @@ The canvas inspector is generated from each node's `properties` schema —
 `string`, `number`, `boolean` toggle, `options` dropdown, `json`, `code`,
 and `file` (a jailed browser: `data/sandbox`, or `data/custom/<nodeKey>/`
 for custom nodes via `GET /api/files`). Agents only ever write
-`execute()` + the schema; the UI comes free.
+`execute()` + the schema; the UI comes free. The canvas uses plain fields
+throughout (Monaco lives only in the Library workshop).
 
 Every text-like field takes **`{{ }}` expressions**, resolved per item at
 runtime with `$json`, `$vars`, `$params` in scope (full JS, 1s cap):
