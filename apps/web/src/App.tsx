@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow, Background, Controls, MiniMap, addEdge, useNodesState, useEdgesState,
   Handle, Position, NodeProps, Edge, Connection, BezierEdge, EdgeProps, EdgeLabelRenderer, useReactFlow,
@@ -130,6 +130,25 @@ export default function App() {
   const [active, setActive] = useState(true);
   const [testInput, setTestInput] = useState('[{"json": {}}]');
   const [testResult, setTestResult] = useState<any>(null);
+  const [inspectorWidth, setInspectorWidth] = useState(() => {
+    const v = Number(localStorage.getItem('ff.inspectorWidth') ?? 300);
+    return Math.min(700, Math.max(240, Number.isFinite(v) ? v : 300));
+  });
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = inspectorRef.current?.offsetWidth ?? inspectorWidth;
+    const clamp = (w: number) => Math.min(700, Math.max(240, w));
+    const onMove = (ev: MouseEvent) => setInspectorWidth(clamp(startW + (startX - ev.clientX)));
+    const onUp = (ev: MouseEvent) => {
+      localStorage.setItem('ff.inspectorWidth', String(clamp(startW + (startX - ev.clientX))));
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [disabled, setDisabled] = useState<string[]>(loadDisabled);
   const [collapsedCats, setCollapsedCats] = useState<string[]>(() => {
@@ -162,6 +181,7 @@ export default function App() {
   const [draftDisabled, setDraftDisabled] = useState<string[]>([]);
   const [settingsClient, setSettingsClient] = useState('claude-code');
   const [copied, setCopied] = useState(false);
+  const inspectorRef = useRef<HTMLElement>(null);
 
   useEffect(() => { api('/api/nodes').then(setNodeDefs); api('/api/workflows').then(setWorkflows); }, []);
   const refreshNodes = useCallback(() => api('/api/nodes').then(setNodeDefs), []);
@@ -664,7 +684,8 @@ export default function App() {
             <Background color="#ddd" gap={16} /><Controls /><MiniMap />
           </ReactFlow>
         </div>
-        <aside className="inspector">
+        <aside className="inspector" ref={inspectorRef} style={{ width: inspectorWidth }}>
+          <div className="resize-gutter" onMouseDown={startResize} onDoubleClick={() => { setInspectorWidth(300); localStorage.setItem('ff.inspectorWidth', '300'); }} title="Drag to resize · double-click to reset" />
           {selected ? (
             <>
               <h3>{String((selected.data as any).label)}</h3>
