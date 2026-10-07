@@ -77,6 +77,7 @@ function PortNode({ data, selected }: NodeProps) {
           <div className="kind">{d.type === 'scriptStart' || d.type === 'scriptEnd' ? `script · ${d.blockId ?? ''}` : d.kind}</div>
         </div>
       </div>
+      {d.status === 'error' && <span className="err-dot" title={d.error ?? 'error'}>!</span>}
       {d.collapsed
         ? (<>
             <div className="kind">{d.collapsedCount} nodes · click to expand in inspector</div>
@@ -277,6 +278,42 @@ export default function App() {
   const toggleBlock = (blockId: string) =>
     setCollapsed((c) => (c.includes(blockId) ? c.filter((b) => b !== blockId) : [...c, blockId]));
 
+  // Static problems: unknown types, unconnected inputs, empty required params.
+  const problems = useMemo(() => {
+    const list: Array<{ nodeId: string; label: string; message: string }> = [];
+    for (const n of nodes) {
+      const type = (n.data as any).type;
+      const label = String((n.data as any).label ?? type);
+      const def = defOf(type);
+      if (!def) { list.push({ nodeId: n.id, label, message: `unknown node type "${type}"` }); continue; }
+      if (def.kind !== 'trigger' && !edges.some((e) => e.target === n.id)) {
+        list.push({ nodeId: n.id, label, message: 'no input connected' });
+      }
+      for (const p of def.properties ?? []) {
+        if (p.required) {
+          const v = (n.data as any).params?.[p.key];
+          if (v === undefined || v === null || String(v).trim() === '') {
+            list.push({ nodeId: n.id, label, message: `required field empty: ${p.displayName}` });
+          }
+        }
+      }
+    }
+    return list;
+  }, [nodes, edges, defOf]);
+
+  const selectedRun = useMemo(() => {
+    if (!selected || !runResult?.results) return null;
+    const self = runResult.results.find((r: any) => r.nodeId === selected.id);
+    if (!self) return null;
+    const byId = new Map<string, any>(runResult.results.map((r: any) => [r.nodeId, r]));
+    // Stored results hold each node's outputs; a node's inputs are its
+    // predecessors' outputs (branch outputs are merged in stored results).
+    const inputs = edges
+      .filter((e) => e.target === selected.id)
+      .flatMap((e) => byId.get(e.source)?.items ?? []);
+    return { self, inputs };
+  }, [selected, runResult, edges]);
+
   const selectedBlock = useMemo(() => {
     if (!selected) return null;
     const t = (selected.data as any).type;
@@ -312,8 +349,9 @@ export default function App() {
     }
     setRunResult(r);
     const statusByNode: Record<string, string> = {};
-    for (const nr of r.results ?? []) statusByNode[nr.nodeId] = nr.status;
-    setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, status: statusByNode[n.id] } })));
+    const errorByNode: Record<string, string> = {};
+    for (const nr of r.results ?? []) { statusByNode[nr.nodeId] = nr.status; if (nr.error) errorByNode[nr.nodeId] = nr.error; }
+    setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, status: statusByNode[n.id], error: errorByNode[n.id] } })));
   };
 
   const newWorkflow = async () => {
@@ -590,6 +628,17 @@ export default function App() {
       </div>
       <div className="body">
         <aside className="sidebar">
+          {problems.length > 0 && (
+            <div className="problems">
+              <h2>⚠ Problems ({problems.length})</h2>
+              {problems.slice(0, 8).map((p, i) => (
+                <div key={i} className="problem-row" onClick={() => setSelectedId(p.nodeId)} title={p.label}>
+                  <b>{p.label}</b> — {p.message}
+                </div>
+              ))}
+              {problems.length > 8 && <div className="muted">…and {problems.length - 8} more</div>}
+            </div>
+          )}
           {paletteGroups.map(([cat, defs]) => (
             <div key={cat}>
               <button className="cat-head" onClick={() => toggleCat(cat)} title={collapsedCats.includes(cat) ? 'Expand' : 'Collapse'}>
@@ -661,6 +710,20 @@ export default function App() {
               <div style={{ marginTop: 12 }}>
                 <button className="btn ghost" onClick={deleteSelected}>Delete node</button>
               </div>
+              {selectedRun && (
+                <>
+                  <h3 style={{ marginTop: 20 }}>Last run — {selectedRun.self.status}{selectedRun.self.durationMs != null ? ` · ${selectedRun.self.durationMs}ms` : ''}</h3>
+                  {selectedRun.self.error && <div className="noderun err"><span className="err-text">{selectedRun.self.error}</span></div>}
+                  <div className="noderun">
+                    <b>Input</b> ({selectedRun.inputs.length} items)
+                    <pre className="run" style={{ maxHeight: 160 }}>{JSON.stringify(selectedRun.inputs.slice(0, 3).map((it: any) => it.json), null, 2)}</pre>
+                  </div>
+                  <div className="noderun">
+                    <b>Output</b> ({selectedRun.self.items?.length ?? 0} items)
+                    <pre className="run" style={{ maxHeight: 160 }}>{JSON.stringify((selectedRun.self.items ?? []).slice(0, 3).map((it: any) => it.json), null, 2)}</pre>
+                  </div>
+                </>
+              )}
               <h3 style={{ marginTop: 20 }}>Test this node</h3>
               <label className="field">
                 <span>Test input (items array)</span>
