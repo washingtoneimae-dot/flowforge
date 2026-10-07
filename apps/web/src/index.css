@@ -89,8 +89,19 @@ body { background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui
 .file-row { font-size: 12px; padding: 5px 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; width: 100%; text-align: left; background: none; border: none; color: var(--ink); }
 .file-row:hover { background: #f0f0f0; }
 .file-crumbs { font-size: 11px; padding: 2px 8px 6px; color: var(--ink-3); }
+.file-pick-row { display: flex; gap: 6px; padding: 2px 4px 8px; }
+.file-pick-row .btn { padding: 4px 10px; font-size: 11px; }
 .file-crumbs button { background: none; border: none; padding: 0; font-size: 11px; color: var(--ink-2); cursor: pointer; text-decoration: underline; }
 .file-crumbs button.current { color: var(--ink); font-weight: 700; text-decoration: none; cursor: default; }
+/* explorer modal */
+.explorer { background: var(--bg); border: 1px solid var(--line-2); border-radius: 14px; width: min(680px, 94vw); max-height: 84vh; display: flex; flex-direction: column; padding: 20px; overflow: hidden; }
+.explorer h2 { margin: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scope-tabs { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
+.scope-tabs button:not(.btn) { background: #fff; border: 1px solid var(--line-2); border-radius: 16px; font-size: 11px; padding: 3px 12px; cursor: pointer; color: var(--ink-2); }
+.scope-tabs button:not(.btn).on { background: #111; color: #fff; border-color: #111; }
+.explorer-list { overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 6px; min-height: 120px; max-height: 40vh; }
+.explorer-list.drag, .file-crumbs.drag { outline: 2px dashed var(--ink); outline-offset: -2px; }
+.explorer-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .icon-preview { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
 .ff-node .kind { font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
 .ff-node.status-error { border-color: var(--err); box-shadow: 0 0 0 1px var(--err), 0 0 12px rgba(217, 38, 38, 0.45); }

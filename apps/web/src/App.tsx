@@ -103,56 +103,181 @@ function PortNode({ data, selected }: NodeProps) {
 }
 const nodeTypes = { port: PortNode };
 
-function FileField({ value, onChange, scope, nodeKey }: { value: string; onChange: (v: string) => void; scope: string; nodeKey?: string }) {
-  const [open, setOpen] = useState(false);
+export interface ExplorerRequest {
+  scope: string;
+  nodeKey?: string;
+  onSelect: (path: string) => void;
+}
+
+function FileExplorer({ scope: initScope, nodeKey, onSelect, onClose }: {
+  scope: string; nodeKey?: string;
+  onSelect: (path: string) => void; onClose: () => void;
+}) {
+  const [scope, setScope] = useState(initScope);
+  const [root, setRoot] = useState('');
   const [path, setPath] = useState('');
-  const [entries, setEntries] = useState<Array<{ name: string; dir: boolean }> | null>(null);
+  const [entries, setEntries] = useState<Array<{ name: string; dir: boolean }>>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const dirRef = useRef<HTMLInputElement>(null);
   const joinP = (base: string, name: string) => (base ? `${base}/${name}` : name).replace(/\/$/, '');
-  const browse = async (p: string) => {
+  // Device scope stores absolute paths; jails store root-relative ones.
+  const toValue = (p: string) => (scope === 'device' ? (p === '' ? '/' : `/${p}`) : p);
+
+  const load = async (sc: string, p: string) => {
     setErr(null);
-    const qs = new URLSearchParams({ scope, path: p });
+    const qs = new URLSearchParams({ scope: sc, path: p });
     if (nodeKey) qs.set('node', nodeKey);
     const r = await api(`/api/files?${qs}`);
     if (r.error) { setErr(r.error); return; }
+    setRoot(r.root ?? '');
     setPath(r.path ?? '');
     setEntries(r.entries ?? []);
-    setOpen(true);
   };
-  const go = (ev: React.MouseEvent, p: string) => {
-    ev.preventDefault();
-    ev.stopPropagation();
-    browse(p);
+
+  const switchScope = (sc: string) => {
+    setScope(sc);
+    setPath('');
+    setEntries([]);
+    load(sc, '');
   };
+
+  useEffect(() => { load(initScope, ''); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toB64 = async (f: File): Promise<string> => {
+    const buf = await f.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000) as unknown as number[]);
+    return btoa(bin);
+  };
+
+  const upload = async (list: FileList | File[], folder: boolean) => {
+    const files = Array.from(list as FileList);
+    if (!files.length) return;
+    setUploading(true);
+    setErr(null);
+    try {
+      const date = new Date().toISOString().slice(0, 10);
+      // Uploads never write outside a jail: device scope lands in the sandbox.
+      const target = scope === 'device'
+        ? { scope: 'sandbox' as string, node: undefined as string | undefined, basePath: `imports/${date}` }
+        : { scope, node: nodeKey, basePath: path };
+      const payload: Array<{ path: string; content: string }> = [];
+      for (const f of files) {
+        const rel = folder && (f as any).webkitRelativePath ? (f as any).webkitRelativePath : f.name;
+        payload.push({ path: rel, content: await toB64(f) });
+      }
+      const body: any = { scope: target.scope, basePath: target.basePath, files: payload };
+      if (target.node) body.node = target.node;
+      const r = await api('/api/files/import', { method: 'POST', body: JSON.stringify(body) });
+      if (r.error) throw new Error(r.error);
+      if (target.scope !== scope) {
+        setScope(target.scope);
+        await load(target.scope, target.basePath);
+      } else {
+        await load(scope, target.basePath);
+      }
+    } catch (e) {
+      setErr(`Import failed: ${(e as Error).message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
-    <div>
-      <div className="row">
-        <input value={value ?? ''} onChange={(e) => onChange(e.target.value)} placeholder="path or {{ $json.file }}" />
-        <button type="button" className="btn ghost" onClick={() => (open ? setOpen(false) : browse(''))}>Browse</button>
-      </div>
-      {open && (
-        <div className="file-list">
-          {err && <div className="error">{err}</div>}
-          <div className="file-crumbs">
-            <button type="button" className={path === '' ? 'current' : ''} onClick={(ev) => go(ev, '')}>root</button>
-            {path !== '' && path.split('/').map((seg, i, segs) => (
-              <span key={i}> / <button type="button" className={i === segs.length - 1 ? 'current' : ''} onClick={(ev) => go(ev, segs.slice(0, i + 1).join('/'))}>{seg}</button>
-            </span>
-            ))}
-          </div>
-          {(entries ?? []).map((e) => (
-            <button type="button" key={e.name} className="file-row" onClick={(ev) => {
-              ev.preventDefault();
-              ev.stopPropagation();
-              if (e.dir) browse(joinP(path, e.name));
-              else { onChange(joinP(path, e.name)); setOpen(false); }
+    <div className="overlay" onClick={onClose}>
+      <div className="explorer" onClick={(e) => e.stopPropagation()}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); upload(e.dataTransfer.files, false); }}>
+        <div className="lib-head">
+          <h2>Choose {path === '' ? root || '…' : `${root} / ${path}`}</h2>
+          <div className="spacer" />
+          <button className="btn ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="scope-tabs">
+          {[['sandbox', 'Sandbox'], ['device', 'Device']].map(([v, label]) => (
+            <button key={v} type="button" className={scope === v ? 'on' : ''} onClick={() => switchScope(v)}>{label}</button>
+          ))}
+          {nodeKey && (
+            <button type="button" className={scope === 'custom' ? 'on' : ''} onClick={() => switchScope('custom')}>Node jail</button>
+          )}
+          <div className="spacer" />
+          <button type="button" className="btn ghost" disabled={uploading} onClick={() => fileRef.current?.click()}>📄 File…</button>
+          <button type="button" className="btn ghost" disabled={uploading} onClick={() => dirRef.current?.click()}>📁 Folder…</button>
+          <input ref={fileRef} type="file" multiple style={{ display: 'none' }}
+            onChange={(e) => { upload(e.target.files ?? [], false); e.target.value = ''; }} />
+          <input ref={dirRef} type="file" style={{ display: 'none' }} {...{ webkitdirectory: '' } as any}
+            onChange={(e) => { upload(e.target.files ?? [], true); e.target.value = ''; }} />
+        </div>
+        {uploading && <div className="muted">Importing…</div>}
+        {err && <div className="error">{err}</div>}
+        <div className={`file-crumbs${dragOver ? ' drag' : ''}`}>
+          <button type="button" className={path === '' ? 'current' : ''} onClick={() => load(scope, '')}>root</button>
+          {path !== '' && path.split('/').map((seg, i, segs) => (
+            <span key={i}> / <button type="button" className={i === segs.length - 1 ? 'current' : ''} onClick={() => load(scope, segs.slice(0, i + 1).join('/'))}>{seg}</button>
+          </span>
+          ))}
+        </div>
+        <div className="explorer-list">
+          {entries.map((e) => (
+            <button type="button" key={e.name} className="file-row" onClick={() => {
+              if (e.dir) load(scope, joinP(path, e.name));
+              else onSelect(toValue(joinP(path, e.name)));
             }}>
               {e.dir ? '📁 ' : '📄 '}{e.name}
             </button>
           ))}
-          <button type="button" className="btn ghost" onClick={() => { onChange(path); setOpen(false); }}>Use this folder</button>
+          {entries.length === 0 && !err && <div className="muted">Empty folder — drop files here or use File… / Folder… above.</div>}
         </div>
-      )}
+        <div className="explorer-foot">
+          <span className="muted">Uploads land in {scope === 'device' ? 'data/sandbox/imports/<date>/' : 'this folder'}.</span>
+          <div className="spacer" />
+          <button type="button" className="btn" onClick={() => onSelect(toValue(path))}>Use this folder</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TriggerTextarea({ value, onChange, rows, placeholder, openExplorer }: {
+  value: string; onChange: (v: string) => void; rows: number; placeholder?: string;
+  openExplorer: (onSelect: (p: string) => void) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  return (
+    <textarea ref={ref} rows={rows} value={value ?? ''} spellCheck={false} placeholder={placeholder}
+      title="Type /file to pick from the explorer"
+      onChange={(e) => {
+        const v = e.target.value;
+        if (/\/file$/.test(v) && ref.current) {
+          const cursor = ref.current.selectionStart ?? v.length;
+          const before = v.slice(0, cursor - 5);
+          const after = v.slice(cursor);
+          openExplorer((picked) => {
+            onChange(before + picked + after);
+            requestAnimationFrame(() => ref.current?.focus());
+          });
+          return;
+        }
+        onChange(v);
+      }} />
+  );
+}
+
+function FileField({ value, onChange, scope, nodeKey, openExplorer }: {
+  value: string; onChange: (v: string) => void; scope: string; nodeKey?: string;
+  openExplorer: (opts: { scope: string; nodeKey?: string; onSelect: (p: string) => void }) => void;
+}) {
+  return (
+    <div>
+      <div className="row">
+        <input value={value ?? ''} onChange={(e) => onChange(e.target.value)} placeholder="path or {{ $json.file }}" />
+        <button type="button" className="btn ghost" onClick={() => openExplorer({ scope, nodeKey, onSelect: (p) => onChange(p) })}>Browse</button>
+      </div>
     </div>
   );
 }
@@ -245,6 +370,8 @@ export default function App() {
   const [settingsClient, setSettingsClient] = useState('claude-code');
   const [copied, setCopied] = useState(false);
   const inspectorRef = useRef<HTMLElement>(null);
+  const [explorer, setExplorer] = useState<ExplorerRequest | null>(null);
+  const openExplorer = (opts: ExplorerRequest) => setExplorer(opts);
   const [exprKeys, setExprKeys] = useState<string[]>([]);
   const exprOn = (nodeId: string, key: string) => exprKeys.includes(`${nodeId}:${key}`);
   const toggleExpr = (nodeId: string, key: string) =>
@@ -814,11 +941,15 @@ export default function App() {
                     </button>
                   ) : p.type === 'file' ? (
                     <FileField value={(selected.data as any).params?.[p.key] ?? ''} onChange={(v) => setParam(p, v)}
-                      scope={p.fileScope ?? 'sandbox'} nodeKey={(selected.data as any).type} />
+                      scope={p.fileScope ?? 'sandbox'} nodeKey={(selected.data as any).type} openExplorer={(o) => openExplorer(o)} />
                   ) : p.type === 'code' && defOf((selected.data as any).type)?.custom ? (
-                    <textarea rows={3} value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)} placeholder="Value for this run — implementation lives in the Library" />
+                    <TriggerTextarea rows={3} value={String((selected.data as any).params?.[p.key] ?? '')}
+                      onChange={(v) => setParam(p, v)} placeholder="Value for this run — implementation lives in the Library"
+                      openExplorer={(onSelect) => openExplorer({ scope: 'sandbox', nodeKey: (selected.data as any).type, onSelect })} />
                   ) : p.type === 'code' || p.type === 'json' ? (
-                    <textarea rows={p.type === 'code' ? 8 : 4} value={String((selected.data as any).params?.[p.key] ?? '')} onChange={(e) => setParam(p, e.target.value)} spellCheck={false} />
+                    <TriggerTextarea rows={p.type === 'code' ? 8 : 4} value={String((selected.data as any).params?.[p.key] ?? '')}
+                      onChange={(v) => setParam(p, v)}
+                      openExplorer={(onSelect) => openExplorer({ scope: 'sandbox', nodeKey: (selected.data as any).type, onSelect })} />
                   ) : p.type === 'number' ? (
                     <input type="number" value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, Number(e.target.value))} />
                   ) : (
@@ -883,6 +1014,13 @@ export default function App() {
         </aside>
       </div>
       {wfMenu && <div className="menu-scrim" onClick={() => setWfMenu(null)} />}
+      {explorer && (
+        <FileExplorer
+          scope={explorer.scope} nodeKey={explorer.nodeKey}
+          onSelect={(p) => { const f = explorer.onSelect; setExplorer(null); f(p); }}
+          onClose={() => setExplorer(null)}
+        />
+      )}
 
       {showSettings && (
         <div className="overlay" onClick={() => setShowSettings(false)}>

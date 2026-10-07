@@ -4,7 +4,7 @@ import { nodeRegistry, resolveNode, isCustomNode, categoryOf, refreshCustomNodes
 import { validateCustomNode, runCustomCode, listCustomNodeRows, normalizePermissions, parseRowPermissions, parseRowDocs, saveCustomNode, rollbackCustomNode, approveCustomNode, setCustomNodeEnabled, checkCustomTrust, rowToApi, getCustomNodeRow, refreshUsageScores } from './customNodes.js';
 import { searchNodes, workflowUsage } from './nodeSearch.js';
 import { contractLine } from './reusability.js';
-import { resolveRoot, listFiles } from './files.js';
+import { resolveRoot, listFiles, importFiles } from './files.js';
 import { evaluateExpression } from '@flowforge/engine';
 import { loadMcpConfig, saveMcpConfig, mcpDistExists, MCP_TOOL_NAMES } from '@flowforge/node-sdk';
 import { toExportDoc, parseImportDoc } from './workflowIo.js';
@@ -14,7 +14,12 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const app = express();
-app.use(express.json({ limit: '2mb' }));
+const jsonSmall = express.json({ limit: '2mb' });
+app.use((req, res, next) => {
+  // Large uploads carry their own limit on the route below.
+  if (req.path === '/api/files/import') return next();
+  return jsonSmall(req, res, next);
+});
 
 // Repo root (server runs from apps/server/dist or apps/server/src).
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -169,6 +174,18 @@ app.post('/api/custom-nodes/test', async (req, res) => {
     if (out && typeof out === 'object' && Array.isArray((out as any).branches)) return res.json({ branches: (out as any).branches });
     return res.json({ items: out });
   } catch (e) { return res.status(400).json({ error: (e as Error).message }); }
+});
+
+/** Import files chosen in the OS picker (base64) into a jailed root. */
+app.post('/api/files/import', express.json({ limit: '100mb' }), (req, res) => {
+  try {
+    const scope = String(req.body?.scope ?? 'sandbox');
+    const nodeKey = req.body?.node === undefined ? undefined : String(req.body.node);
+    const basePath = String(req.body?.basePath ?? '');
+    const { root, label } = resolveRoot(scope, nodeKey);
+    const { written, bytes } = importFiles(root, basePath, req.body?.files ?? []);
+    res.json({ root: label, written, bytes });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
 });
 
 /** Jailed file browser for `file`-type properties. */
