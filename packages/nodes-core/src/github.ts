@@ -6,7 +6,7 @@ import { defineNode } from '@flowforge/node-sdk';
  */
 export const GITHUB_DEFAULT_BASE = 'https://api.github.com';
 
-type Op = 'list_issues' | 'create_issue' | 'create_issue_comment';
+type Op = 'list_issues' | 'create_issue' | 'create_issue_comment' | 'list_pull_requests' | 'trigger_dispatch';
 
 function authHeader(cred: unknown): string {
   if (cred && typeof cred === 'object') {
@@ -22,7 +22,7 @@ function authHeader(cred: unknown): string {
 export const githubNode = defineNode({
   key: 'github',
   displayName: 'GitHub',
-  description: 'Calls the GitHub REST API (list/create issues, comment) → one response item per input item.',
+  description: 'Calls the GitHub REST API (issues, PRs, comments, workflow dispatches) → one response item per input item.',
   version: 1,
   kind: 'action',
   icon: 'globe',
@@ -35,14 +35,18 @@ export const githubNode = defineNode({
         { name: 'List issues', value: 'list_issues' },
         { name: 'Create issue', value: 'create_issue' },
         { name: 'Comment on issue', value: 'create_issue_comment' },
+        { name: 'List pull requests', value: 'list_pull_requests' },
+        { name: 'Trigger workflow dispatch', value: 'trigger_dispatch' },
       ],
     },
-    { key: 'credential', displayName: 'Credential', type: 'credential', default: '', credentialType: 'token', description: 'PAT from Settings → Credentials (needs repo/issues scope)' },
+    { key: 'credential', displayName: 'Credential', type: 'credential', default: '', credentialType: 'token', description: 'PAT from Settings → Credentials (needs repo scope; dispatch needs actions:write)' },
     { key: 'owner', displayName: 'Owner', type: 'string', required: true, default: '' },
     { key: 'repo', displayName: 'Repo', type: 'string', required: true, default: '' },
     { key: 'issue_number', displayName: 'Issue number (comment op)', type: 'number', default: 0 },
     { key: 'title', displayName: 'Title (create op)', type: 'string', default: '' },
     { key: 'body', displayName: 'Body (create/comment, {{ }}-aware)', type: 'string', default: '' },
+    { key: 'workflow', displayName: 'Workflow file (dispatch op)', type: 'string', default: '', description: 'e.g. "ci.yml" — must declare a workflow_dispatch trigger' },
+    { key: 'ref', displayName: 'Git ref (dispatch op)', type: 'string', default: 'main' },
     {
       key: 'state', displayName: 'State (list op)', type: 'options', default: 'open',
       options: [{ name: 'open', value: 'open' }, { name: 'closed', value: 'closed' }, { name: 'all', value: 'all' }],
@@ -53,7 +57,7 @@ export const githubNode = defineNode({
   async execute(ctx) {
     const p = ctx.params as any;
     const op = String(p.operation ?? 'list_issues') as Op;
-    if (!['list_issues', 'create_issue', 'create_issue_comment'].includes(op)) {
+    if (!['list_issues', 'create_issue', 'create_issue_comment', 'list_pull_requests', 'trigger_dispatch'].includes(op)) {
       throw ctx.error(`unknown GitHub operation "${op}"`);
     }
     const owner = String(p.owner ?? '').trim();
@@ -98,13 +102,24 @@ export const githubNode = defineNode({
         const body = String(ctx.expr(String(p.body ?? ''), item) ?? '');
         const data = await call('POST', `/repos/${owner}/${repo}/issues`, { title, body });
         out.push({ json: { operation: op, number: data?.number, url: data?.html_url, issue: data } });
-      } else {
+      } else if (op === 'create_issue_comment') {
         const num = Number(p.issue_number ?? 0);
         if (!num) throw ctx.error('issue_number is required for create_issue_comment');
         const body = String(ctx.expr(String(p.body ?? ''), item) ?? '');
         if (!body.trim()) throw ctx.error('body is required for create_issue_comment');
         const data = await call('POST', `/repos/${owner}/${repo}/issues/${num}/comments`, { body });
         out.push({ json: { operation: op, id: data?.id, url: data?.html_url, comment: data } });
+      } else if (op === 'list_pull_requests') {
+        const perPage = Math.min(Math.max(Number(p.per_page ?? 30) || 30, 1), 100);
+        const state = String(p.state ?? 'open');
+        const data = await call('GET', `/repos/${owner}/${repo}/pulls?state=${state}&per_page=${perPage}`);
+        out.push({ json: { operation: op, count: Array.isArray(data) ? data.length : 0, pulls: data } });
+      } else {
+        const workflow = String(p.workflow ?? '').trim();
+        if (!workflow) throw ctx.error('workflow file is required for trigger_dispatch');
+        const ref = String(ctx.expr(String(p.ref ?? 'main'), item) ?? '').trim() || 'main';
+        await call('POST', `/repos/${owner}/${repo}/actions/workflows/${workflow}/dispatches`, { ref });
+        out.push({ json: { operation: op, ok: true, workflow, ref } });
       }
     }
     return out;

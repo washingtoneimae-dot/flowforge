@@ -104,6 +104,46 @@ describe('github node', () => {
     expect(calls).toBe(0);
   });
 
+  it('lists pull requests', async () => {
+    await withStub(
+      () => ({ status: 200, payload: [{ number: 3 }, { number: 4 }, { number: 5 }] }),
+      async (baseUrl, seen) => {
+        const out: any = await githubNode.execute(ctx({ ...base(baseUrl), operation: 'list_pull_requests', state: 'open', per_page: 30 }));
+        expect(seen.method).toBe('GET');
+        expect(seen.url).toBe('/repos/o/r/pulls?state=open&per_page=30');
+        expect(out[0].json).toMatchObject({ operation: 'list_pull_requests', count: 3 });
+        expect(out[0].json.pulls).toHaveLength(3);
+      },
+    );
+  });
+
+  it('triggers workflow dispatches with {{ }} refs', async () => {
+    await withStub(
+      () => ({ status: 204, payload: {} }),
+      async (baseUrl, seen) => {
+        const out: any = await githubNode.execute(ctx(
+          { ...base(baseUrl), operation: 'trigger_dispatch', workflow: 'ci.yml', ref: '{{ $json.branch }}' },
+          [{ json: { branch: 'feature-x' } }],
+        ));
+        expect(seen.method).toBe('POST');
+        expect(seen.url).toBe('/repos/o/r/actions/workflows/ci.yml/dispatches');
+        expect(seen.body).toEqual({ ref: 'feature-x' });
+        expect(out).toEqual([{ json: { operation: 'trigger_dispatch', ok: true, workflow: 'ci.yml', ref: 'feature-x' } }]);
+      },
+    );
+  });
+
+  it('requires a workflow file for dispatches', async () => {
+    let calls = 0;
+    await withStub(
+      () => { calls++; return { status: 204, payload: {} }; },
+      async (baseUrl) => {
+        await expect(githubNode.execute(ctx({ ...base(baseUrl), operation: 'trigger_dispatch', workflow: '' }))).rejects.toThrow(/workflow file/);
+      },
+    );
+    expect(calls).toBe(0);
+  });
+
   it('maps GitHub error payloads to readable errors', async () => {
     await withStub(
       () => ({ status: 401, payload: { message: 'Bad credentials' } }),

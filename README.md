@@ -64,11 +64,12 @@ tested, approved, and versioned.
 | Cron Trigger | trigger | Starts a flow on a schedule (cron expression or every N seconds) |
 | File Watch Trigger | trigger | Starts a flow when files change in a watched dir (debounced) |
 | HTTP Request | action | GET/POST/PUT/DELETE with JSON headers/body |
-| GitHub | action | GitHub REST API: list/create issues, comment (one call per item) |
+| GitHub | action | GitHub REST API: issues, PRs, comments, workflow dispatches |
 | Slack | action | Post messages via incoming webhook (credential or URL, one call per item) |
 | Discord | action | Post messages via channel webhook (credential or URL, ≤2000 chars) |
 | Notion | action | Query databases, create pages, append blocks (one call per item) |
 | Telegram | action | Send messages via a bot (credential or token, ≤4096 chars) |
+| RSS Feed | action | Read RSS/Atom feeds → one item per entry (title, link, date, summary) |
 | Set / Edit Fields | action | Merge fields into each item |
 | If | action | Branch output 0 = true, 1 = false |
 | Switch | action | Route by case value, default falls through |
