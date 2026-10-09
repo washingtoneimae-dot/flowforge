@@ -2,6 +2,7 @@ import { defineNode } from '@flowforge/node-sdk';
 import { approvalNode } from './approval.js';
 import { githubNode } from './github.js';
 import { slackNode } from './slack.js';
+import { discordNode } from './discord.js';
 import vm from 'node:vm';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -578,7 +579,7 @@ export const nodeCategories: Record<string, string> = {
   if: 'logic', switch: 'logic', filter: 'logic', merge: 'logic',
   setFields: 'data', splitOut: 'data', aggregate: 'data', jsonParse: 'data', datetime: 'data', crypto: 'data',
   code: 'code', pythonCode: 'code', scriptStart: 'code', scriptEnd: 'code',
-  httpRequest: 'network', sendEmail: 'network', github: 'network', slack: 'network',
+  httpRequest: 'network', sendEmail: 'network', github: 'network', slack: 'network', discord: 'network',
   fileOps: 'files',
   noOp: 'flow', wait: 'flow', approval: 'flow',
 };
@@ -588,11 +589,12 @@ export const coreNodes = [
   httpRequest, setFields, ifNode, switchNode, filterNode, mergeNode,
   codeNode, pythonCodeNode, scriptStart, scriptEnd,
   noOpNode, waitNode, approvalNode, splitOutNode, aggregateNode,
-  datetimeNode, cryptoNode, jsonParseNode, sendEmailNode, fileOpsNode, githubNode, slackNode,
+  datetimeNode, cryptoNode, jsonParseNode, sendEmailNode, fileOpsNode, githubNode, slackNode, discordNode,
 ];
 
 export { githubNode, GITHUB_DEFAULT_BASE } from './github.js';
 export { slackNode } from './slack.js';
+export { discordNode } from './discord.js';
 
 export { approvalNode, setApprovalHandler, getApprovalHandler, APPROVAL_MAX_TIMEOUT_MINUTES } from './approval.js';
 export type { ApprovalRequest, ApprovalDecision, ApprovalHandler } from './approval.js';

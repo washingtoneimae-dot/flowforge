@@ -39,6 +39,6 @@
 - [ ] Per-node run output preview in the inspector
 - [x] Real cron expressions (5-field matcher; interval-seconds still the default when empty)
 - [x] Credentials store (AES-256-GCM table, names-only API, run-time resolution, usage audit)
-- [ ] Official node packages: Slack, Discord, GitHub, Notion, Google Sheets
+- [ ] Official node packages: Slack, Discord, GitHub (built in) — Notion, Google Sheets next
 - [ ] Example community node repo + template
 - [ ] Per-node run output preview in the inspector (test-run exists, last-run preview next)

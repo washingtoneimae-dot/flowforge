@@ -63,6 +63,7 @@ tested, approved, and versioned.
 | HTTP Request | action | GET/POST/PUT/DELETE with JSON headers/body |
 | GitHub | action | GitHub REST API: list/create issues, comment (one call per item) |
 | Slack | action | Post messages via incoming webhook (credential or URL, one call per item) |
+| Discord | action | Post messages via channel webhook (credential or URL, ≤2000 chars) |
 | Set / Edit Fields | action | Merge fields into each item |
 | If | action | Branch output 0 = true, 1 = false |
 | Switch | action | Route by case value, default falls through |
