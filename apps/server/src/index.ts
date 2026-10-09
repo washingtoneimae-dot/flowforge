@@ -10,6 +10,11 @@ import { loadMcpConfig, saveMcpConfig, mcpDistExists, MCP_TOOL_NAMES } from '@fl
 import { toExportDoc, parseImportDoc } from './workflowIo.js';
 import { diffDefinitions } from './workflowDiff.js';
 import { ApprovalStore } from './approvals.js';
+import {
+  getCredKey, encryptFields, validateCredentialInput,
+  listCredentials, insertCredential, updateCredential, deleteCredential,
+  getCredentialFields, resolveCredentialRefs,
+} from './credentials.js';
 import { setApprovalHandler } from '@flowforge/nodes-core';
 import { executeWorkflow, Workflow } from '@flowforge/engine';
 import { mkdirSync, watch } from 'node:fs';
@@ -26,6 +31,16 @@ app.use((req, res, next) => {
 
 // Repo root (server runs from apps/server/dist or apps/server/src).
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+// Credentials: AES-256-GCM via explicit FLOWFORGE_CRED_KEY or a machine-local
+// data/.credkey (0600, auto-created). Fail fast on a corrupt explicit key.
+let credKey: Buffer;
+try {
+  credKey = getCredKey(repoRoot);
+} catch (e) {
+  console.error(`[flowforge] bad credential key: ${(e as Error).message}`);
+  process.exit(1);
+}
 
 function mcpSettings() {
   const config = loadMcpConfig(repoRoot);
@@ -210,10 +225,18 @@ app.post('/api/nodes/:key/test', async (req, res) => {
   const params = (req.body?.params && typeof req.body.params === 'object' ? req.body.params : {}) as Record<string, unknown>;
   const rawItems = Array.isArray(req.body?.items) ? req.body.items : [{ json: {} }];
   const items = rawItems.map((it: any) => (it && typeof it.json === 'object' ? { json: it.json } : { json: (it ?? {}) as Record<string, unknown> }));
+  // Resolve credential names so tested nodes behave like real runs.
+  let testParams = params;
+  try {
+    testParams = resolveCredentialRefs(
+      [{ id: 'test', type: def.key, params }], (t) => (t === def.key ? def : undefined) as any,
+      (name) => getCredentialFields(credKey, name),
+    ).nodes[0].params;
+  } catch (e) { return res.status(400).json({ error: `credential resolution failed: ${(e as Error).message}` }); }
   const vars: Record<string, unknown> = {};
   try {
     const out = await withTimeout(
-      Promise.resolve(def.execute({ params, items, vars, workflow: { id: 'test', name: 'node test' }, executionId: 'test', nodeId: def.key, expr: (t, item) => evaluateExpression(t, { $json: item.json, $vars: vars, $params: params }), error: (m) => new Error(m) })),
+      Promise.resolve(def.execute({ params: testParams, items, vars, workflow: { id: 'test', name: 'node test' }, executionId: 'test', nodeId: def.key, expr: (t, item) => evaluateExpression(t, { $json: item.json, $vars: vars, $params: testParams }), error: (m) => new Error(m) })),
       30_000,
       def.displayName,
     );
@@ -355,10 +378,21 @@ async function runWorkflow(wfId: string, initialItems: unknown[] = [], opts: { m
   if (!opts.manual && trust.tested.length) {
     throw new Error(`custom node(s) not approved for automatic runs: ${trust.tested.join(', ')} — approve them in the Library`);
   }
-  const wf: Workflow = { id: row.id, name: row.name, nodes: def.nodes, edges: def.edges };
+  // Resolve credential names → secret field objects. Stored definitions and
+  // execution records keep names only when nodes don't echo them into items.
+  let runNodes = def.nodes;
+  let credsUsed: string[] = [];
+  try {
+    const r = resolveCredentialRefs(def.nodes ?? [], (t) => resolveNode(t) as any, (name) => getCredentialFields(credKey, name));
+    runNodes = r.nodes;
+    credsUsed = r.used;
+  } catch (e) {
+    throw new Error(`credential resolution failed: ${(e as Error).message}`);
+  }
+  const wfResolved: Workflow = { id: row.id, name: row.name, nodes: runNodes, edges: def.edges };
   const executionId = `exec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   publishRunEvent(wfId, { type: 'run-start', executionId, workflowId: wfId, startedAt: new Date().toISOString() });
-  const result = await executeWorkflow(wf, resolveNode, {
+  const result = await executeWorkflow(wfResolved, resolveNode, {
     initialItems: initialItems as any,
     concurrency: 4,
     executionId,
@@ -374,7 +408,7 @@ async function runWorkflow(wfId: string, initialItems: unknown[] = [], opts: { m
   // simple retention: keep last 200 executions per workflow
   db.prepare('DELETE FROM executions WHERE workflow_id=? AND id NOT IN (SELECT id FROM executions WHERE workflow_id=? ORDER BY started_at DESC LIMIT 200)')
     .run(wfId, wfId);
-  return { ...result, trust: { testedUnapproved: trust.tested } };
+  return { ...result, trust: { testedUnapproved: trust.tested }, credentials: { used: credsUsed } };
 }
 
 app.post('/api/workflows/:id/run', async (req, res) => {
@@ -400,6 +434,42 @@ app.get('/api/executions/:id', (req, res) => {
   } catch {
     return res.json(row);
   }
+});
+
+// Credentials: names + types are public to the UI/MCP; values never leave node execution.
+app.get('/api/credentials', (_req, res) => {
+  res.json(listCredentials());
+});
+
+app.post('/api/credentials', (req, res) => {
+  try {
+    const v = validateCredentialInput(req.body);
+    const meta = insertCredential(v.name, v.type, encryptFields(credKey, v.fields));
+    res.status(201).json(meta);
+  } catch (e) {
+    const code = /already exists/.test((e as Error).message) ? 409 : 400;
+    res.status(code).json({ error: (e as Error).message });
+  }
+});
+
+app.put('/api/credentials/:name', (req, res) => {
+  try {
+    const b = req.body ?? {};
+    const type = b.type === undefined ? undefined : String(b.type).trim().slice(0, 32) || 'token';
+    let enc: string | undefined;
+    if (b.fields !== undefined) {
+      const v = validateCredentialInput({ name: req.params.name, fields: b.fields });
+      enc = encryptFields(credKey, v.fields);
+    }
+    const meta = updateCredential(req.params.name, type, enc);
+    if (!meta) return res.status(404).json({ error: 'not found' });
+    res.json(meta);
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+
+app.delete('/api/credentials/:name', (req, res) => {
+  if (!deleteCredential(req.params.name)) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true });
 });
 
 // Human decisions for approval nodes. No MCP tool touches these — liveware only.

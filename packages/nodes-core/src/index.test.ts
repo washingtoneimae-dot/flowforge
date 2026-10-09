@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { createServer } from 'node:http';
 import { evaluateExpression } from '@flowforge/engine';
-import { setFields, ifNode, filterNode, switchNode, splitOutNode, aggregateNode, cryptoNode, jsonParseNode, coreNodes, datetimeNode, waitNode, scriptStart, scriptEnd, nodeCategories } from './index.js';
+import { setFields, ifNode, filterNode, switchNode, splitOutNode, aggregateNode, cryptoNode, jsonParseNode, coreNodes, datetimeNode, waitNode, scriptStart, scriptEnd, nodeCategories, httpRequest } from './index.js';
 
 const ctx = (params: any, items: any[] = [{ json: {} }]) => ({
   params, items, vars: {}, workflow: { id: 'w', name: 'n' }, error: (m: string) => new Error(m),
@@ -115,5 +116,47 @@ describe('script markers', () => {
     const items = [{ json: { a: 1 } }];
     expect(await scriptStart.execute(ctx({ blockId: 'b' }, items))).toEqual(items);
     expect(await scriptEnd.execute(ctx({ blockId: 'b' }, items))).toEqual(items);
+  });
+});
+
+describe('httpRequest credentials', () => {
+  const withServer = async (fn: (url: string, seen: Record<string, string | undefined>) => Promise<void>) => {
+    const seen: Record<string, string | undefined> = {};
+    const srv = createServer((req, res) => {
+      seen.authorization = req.headers.authorization;
+      res.setHeader('Content-Type', 'application/json');
+      res.end('{"ok":true}');
+    });
+    await new Promise<void>((r) => srv.listen(0, r));
+    try {
+      await fn(`http://127.0.0.1:${(srv.address() as any).port}/x`, seen);
+    } finally {
+      srv.close();
+    }
+  };
+  it('sends Bearer auth from a resolved credential object', async () => {
+    await withServer(async (url, seen) => {
+      const out: any = await httpRequest.execute(ctx({ method: 'GET', url, headers: '{}', body: '', credential: { token: 's3cr3t' } }));
+      expect(out[0].json.ok).toBe(true);
+      expect(seen.authorization).toBe('Bearer s3cr3t');
+    });
+  });
+  it('explicit headers win over the credential', async () => {
+    await withServer(async (url, seen) => {
+      await httpRequest.execute(ctx({ method: 'GET', url, headers: '{"Authorization":"Basic eA=="}', body: '', credential: { token: 's3cr3t' } }));
+      expect(seen.authorization).toBe('Basic eA==');
+    });
+  });
+  it('supports username/password as Basic', async () => {
+    await withServer(async (url, seen) => {
+      await httpRequest.execute(ctx({ method: 'GET', url, headers: '{}', body: '', credential: { username: 'u', password: 'p' } }));
+      expect(seen.authorization).toBe(`Basic ${Buffer.from('u:p').toString('base64')}`);
+    });
+  });
+  it('works with no credential at all', async () => {
+    await withServer(async (url, seen) => {
+      await httpRequest.execute(ctx({ method: 'GET', url, headers: '{}', body: '', credential: '' }));
+      expect(seen.authorization).toBeUndefined();
+    });
   });
 });

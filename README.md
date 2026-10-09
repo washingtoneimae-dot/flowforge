@@ -180,11 +180,11 @@ Point any MCP client at it (Flowforge itself must be running):
 }
 ```
 
-18 tools: `list_nodes`, `describe_node`, `find_node`, `list_workflows`, `get_workflow`,
+19 tools: `list_nodes`, `describe_node`, `find_node`, `list_workflows`, `get_workflow`,
 `create_workflow`, `update_workflow`, `delete_workflow`, `run_workflow`,
 `test_node`, `create_custom_node`, `delete_custom_node`, `rollback_custom_node`,
 `set_custom_node_enabled`, `export_workflow`,
-`import_workflow`, `list_executions`, `get_execution` — plus a `flowforge://nodes-catalog`
+`import_workflow`, `list_executions`, `get_execution`, `list_credentials` — plus a `flowforge://nodes-catalog`
 resource. Typical agent loop: `find_node` → `describe_node` →
 `create_custom_node` (with examples + author, if no fit) → `run_workflow` →
 fix from errors → repeat. Approval stays human: there is deliberately no
@@ -358,7 +358,27 @@ GET    /api/workflows/:id/events  — SSE live run events (run-start/node-start/
 GET    /api/approvals?workflowId  — pending human approvals
 GET    /api/approvals/history     — decided approval history
 POST   /api/approvals/:executionId/:nodeId — human decision { approved, by?, comment? }
+GET    /api/credentials           — credential names + types (never values)
+POST   /api/credentials           — create { name, type, fields }
+PUT    /api/credentials/:name     — update type/fields
+DELETE /api/credentials/:name     — delete
 ALL    /hook/:path                — webhook trigger
+```
+
+## Credentials store
+
+Secrets live in `Settings → Credentials`, encrypted at rest with AES-256-GCM
+(key from `FLOWFORGE_CRED_KEY`, else an auto-created machine-local
+`data/.credkey`). Nodes declare `credential`-type params (HTTP Request has
+one for `Authorization`); workflows store the **name**, the server resolves
+the value at run time, and each run records which credentials it used
+(`credentials.used`, shown in the run panel and MCP summaries). Agents get
+`list_credentials` (names only) — there is deliberately no tool that reads
+values. Notes: custom-node save-time examples do **not** resolve credentials
+(draft code only ever sees names); anything a node outputs — including remote
+response bodies — lands in execution history like any other data, so treat
+runs as secret-capable, keep secrets out of mapped fields, and pair sensitive
+flows with an Approval node and least-privilege credentials.
 ```
 
 ## Human-in-the-loop approvals

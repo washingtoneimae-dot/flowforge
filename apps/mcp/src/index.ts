@@ -266,6 +266,13 @@ tool(
 );
 
 tool(
+  'list_credentials',
+  'Named secrets available to workflows (names + types only — values never leave the server). Reference one by name in a credential-type node param.',
+  {},
+  async () => text(await ff('/api/credentials')),
+);
+
+tool(
   'get_execution',
   'Full detail for one execution: per-node status, item counts, durations, previews and errors. Use after run_workflow or list_executions.',
   { id: z.string().describe('Execution id, e.g. exec_...') },

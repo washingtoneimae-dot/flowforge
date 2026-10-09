@@ -83,7 +83,7 @@ export async function runExamples(
 export const KEY_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
 const MAX_KEY_LEN = 48;
 
-const PROP_TYPES = new Set(['string', 'number', 'boolean', 'options', 'collection', 'json', 'code', 'file']);
+const PROP_TYPES = new Set(['string', 'number', 'boolean', 'options', 'collection', 'json', 'code', 'file', 'credential']);
 
 export interface CustomNodeInput {
   key: string;

@@ -323,6 +323,9 @@ export default function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<any>(null);
+  const [credentials, setCredentials] = useState<any[]>([]);
+  const [credForm, setCredForm] = useState({ name: '', type: 'token', fields: '{"token":""}' });
+  const [credError, setCredError] = useState<string | null>(null);
   const [live, setLive] = useState(initialLiveState);
   const [approvals, setApprovals] = useState<any[]>([]);
 
@@ -406,7 +409,7 @@ export default function App() {
   const toggleExpr = (nodeId: string, key: string) =>
     setExprKeys((ks) => (exprOn(nodeId, key) ? ks.filter((k) => k !== `${nodeId}:${key}`) : [...ks, `${nodeId}:${key}`]));
 
-  useEffect(() => { api('/api/nodes').then(setNodeDefs); api('/api/workflows').then(setWorkflows); }, []);
+  useEffect(() => { api('/api/nodes').then(setNodeDefs); api('/api/workflows').then(setWorkflows); api('/api/credentials').then(setCredentials).catch(() => {}); }, []);
   const refreshNodes = useCallback(() => api('/api/nodes').then(setNodeDefs), []);
 
   const toggleDisabled = (key: string) =>
@@ -724,6 +727,8 @@ export default function App() {
     setDraftUrl(s.flowforgeUrl);
     setDraftDisabled(s.disabledTools ?? []);
     setCopied(false);
+    setCredError(null);
+    await loadCredentials();
     setShowSettings(true);
   };
 
@@ -736,6 +741,30 @@ export default function App() {
 
   const toggleTool = (name: string) =>
     setDraftDisabled((ds) => (ds.includes(name) ? ds.filter((t) => t !== name) : [...ds, name]));
+
+  const loadCredentials = async () => {
+    try { setCredentials(await api('/api/credentials')); } catch { /* ignore */ }
+  };
+
+  const saveCredential = async () => {
+    setCredError(null);
+    let fields: any;
+    try {
+      fields = JSON.parse(credForm.fields);
+      if (!fields || typeof fields !== 'object' || Array.isArray(fields)) throw new Error('must be a JSON object');
+    } catch (e) { setCredError(`Bad fields JSON: ${(e as Error).message}`); return; }
+    const r = await api('/api/credentials', { method: 'POST', body: JSON.stringify({ name: credForm.name.trim(), type: credForm.type.trim() || 'token', fields }) });
+    if (r?.error) { setCredError(r.error); return; }
+    setCredForm({ name: '', type: 'token', fields: '{"token":""}' });
+    await loadCredentials();
+  };
+
+  const deleteCredential = async (name: string) => {
+    if (!confirm(`Delete credential "${name}"? Workflows using it will fail until pointed elsewhere.`)) return;
+    const r = await api(`/api/credentials/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (r?.error) { setCredError(r.error); return; }
+    await loadCredentials();
+  };
 
   const copyText = async (t: string) => {
     try { await navigator.clipboard.writeText(t); } catch {
@@ -759,7 +788,8 @@ export default function App() {
     create_custom_node: 'Author new nodes', delete_custom_node: 'Delete custom nodes',
     rollback_custom_node: 'Restore a prior version', set_custom_node_enabled: 'Kill switch',
     export_workflow: 'Export workflow JSON', import_workflow: 'Import workflow JSON',
-    list_executions: 'Read run history',
+    list_executions: 'Read run history', get_execution: 'Read one execution in full',
+    list_credentials: 'List credential names (values never leave the server)',
   };
 
   const openNewCustom = () => {
@@ -1022,6 +1052,14 @@ export default function App() {
                     <select value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)}>
                       {p.options.map((o: any) => <option key={String(o.value)} value={o.value}>{o.name}</option>)}
                     </select>
+                  ) : p.type === 'credential' ? (
+                    <>
+                      <select value={(selected.data as any).params?.[p.key] ?? ''} onChange={(e) => setParam(p, e.target.value)}>
+                        <option value="">— none —</option>
+                        {credentials.map((c: any) => <option key={c.name} value={c.name}>{c.name} · {c.type}</option>)}
+                      </select>
+                      <small className="muted">Named secret only — the value is resolved at run time. Manage in ⚙ Settings.</small>
+                    </>
                   ) : p.type === 'boolean' ? (
                     <button type="button" className={`switch ${((selected.data as any).params?.[p.key] ?? p.default) ? 'on' : ''}`}
                       onClick={() => setParam(p, !((selected.data as any).params?.[p.key] ?? p.default))}>
@@ -1072,7 +1110,7 @@ export default function App() {
               )}
               {selectedRun && (
                 <>
-                  <h3 style={{ marginTop: 20 }}>Last run — {selectedRun.self.status}{selectedRun.self.durationMs != null ? ` · ${selectedRun.self.durationMs}ms` : ''}</h3>
+                  <h3 style={{ marginTop: 20 }}>Last run — {selectedRun.self.status}{selectedRun.self.durationMs != null ? ` · ${selectedRun.self.durationMs}ms` : ''}{runResult.credentials?.used?.length ? ` · 🔑 ${runResult.credentials.used.join(', ')}` : ''}</h3>
                   {selectedRun.self.error && <div className="noderun err"><span className="err-text">{selectedRun.self.error}</span></div>}
                   <div className="noderun">
                     <b>Input</b> ({selectedRun.inputs.length} items)
@@ -1162,6 +1200,26 @@ export default function App() {
                 </div>
                 <div className="row" style={{ marginTop: 12 }}>
                   <button className="btn primary" onClick={saveSettings}>Save settings</button>
+                </div>
+                <h3>Credentials</h3>
+                <div className="desc">Named secrets for node params (e.g. API tokens). Values are encrypted at rest, resolved at run time, and never shown or returned by the API — agents and exports see names only. Runs record which credentials they used.</div>
+                {credentials.length === 0 && <div className="muted">No credentials yet.</div>}
+                {credentials.map((c: any) => (
+                  <div key={c.name} className="version-row">
+                    <span><b>{c.name}</b> · {c.type}</span>
+                    <button className="btn ghost" onClick={() => deleteCredential(c.name)}>Delete</button>
+                  </div>
+                ))}
+                <div className="row" style={{ marginTop: 8 }}>
+                  <input value={credForm.name} onChange={(e) => setCredForm({ ...credForm, name: e.target.value })} placeholder="name (letters, digits, _ -)" style={{ maxWidth: 220 }} />
+                  <input value={credForm.type} onChange={(e) => setCredForm({ ...credForm, type: e.target.value })} placeholder="type" style={{ maxWidth: 120 }} />
+                </div>
+                <label className="field" style={{ marginTop: 8 }}><span>Secret fields (JSON object — values stored encrypted)</span>
+                  <textarea rows={3} value={credForm.fields} onChange={(e) => setCredForm({ ...credForm, fields: e.target.value })}
+                    placeholder='{"token":"..."}' style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11 }} /></label>
+                {credError && <div className="error">{credError}</div>}
+                <div className="row">
+                  <button className="btn" onClick={saveCredential}>Add credential</button>
                 </div>
               </>
             )}

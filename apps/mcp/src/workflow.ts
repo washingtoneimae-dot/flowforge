@@ -38,6 +38,7 @@ export function summarizeRun(result: any) {
   return {
     executionId: result.executionId,
     status: result.status,
+    credentialsUsed: result.credentials?.used ?? [],
     nodes: (result.results ?? []).map((r: any) => ({
       nodeId: r.nodeId,
       status: r.status,

@@ -36,7 +36,8 @@ export type NodePropertyType =
   | 'collection'
   | 'json'
   | 'code'
-  | 'file';
+  | 'file'
+  | 'credential';
 
 export interface NodeProperty {
   key: string;
@@ -51,6 +52,8 @@ export interface NodeProperty {
   properties?: NodeProperty[];
   /** For type: 'file' — which jail the browser lists */
   fileScope?: 'sandbox' | 'custom' | 'device';
+  /** For type: 'credential' — hint for the picker (e.g. 'token', 'userpass') */
+  credentialType?: string;
 }
 
 export interface NodeDefinition {

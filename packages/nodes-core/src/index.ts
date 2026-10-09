@@ -77,6 +77,7 @@ export const httpRequest = defineNode({
     { key: 'url', displayName: 'URL', type: 'string', required: true, default: '' },
     { key: 'headers', displayName: 'Headers (JSON)', type: 'json', default: '{}' },
     { key: 'body', displayName: 'Body (JSON)', type: 'json', default: '' },
+    { key: 'credential', displayName: 'Credential (optional)', type: 'credential', default: '', credentialType: 'token', description: 'Named secret from Settings → Credentials; sets Authorization unless headers already do' },
   ],
   async execute(ctx) {
     const { method = 'GET', url: rawUrl, headers: rawHeaders, body: rawBody } = ctx.params as any;
@@ -87,10 +88,20 @@ export const httpRequest = defineNode({
       const resolvedUrl = String(ctx.expr(url, item) ?? '');
       if (!resolvedUrl) throw ctx.error('URL resolved to empty');
       const headersStr = rawHeaders ? String(ctx.expr(rawHeaders, item) ?? '') : '';
+      let headers: Record<string, string> = {};
+      try { headers = headersStr ? JSON.parse(headersStr) : {}; } catch { throw ctx.error('Headers must be valid JSON (after resolving expressions)'); }
+      const hasAuth = Object.keys(headers).some((k) => k.toLowerCase() === 'authorization');
+      const cred = (ctx.params as any).credential;
+      if (!hasAuth && cred && typeof cred === 'object') {
+        if (typeof cred.token === 'string' && cred.token) headers.Authorization = `Bearer ${cred.token}`;
+        else if (typeof cred.username === 'string' && typeof cred.password === 'string') {
+          headers.Authorization = `Basic ${Buffer.from(`${cred.username}:${cred.password}`).toString('base64')}`;
+        }
+      }
       const bodyStr = rawBody && method !== 'GET' ? String(ctx.expr(rawBody, item) ?? '') : '';
       const res = await fetch(resolvedUrl, {
         method: String(method),
-        headers: headersStr ? JSON.parse(headersStr) : undefined,
+        headers: Object.keys(headers).length ? headers : undefined,
         body: bodyStr || undefined,
       });
       const text = await res.text();

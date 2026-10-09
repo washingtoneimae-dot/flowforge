@@ -86,6 +86,13 @@ CREATE TABLE IF NOT EXISTS custom_kv (
   v TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (node_key, k)
+);
+CREATE TABLE IF NOT EXISTS credentials (
+  name TEXT PRIMARY KEY,
+  type TEXT NOT NULL DEFAULT 'token',
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );`);
 
 try {
