@@ -66,6 +66,26 @@ export const cronTrigger = defineNode({
   },
 });
 
+export const fileWatchTrigger = defineNode({
+  key: 'fileWatchTrigger',
+  displayName: 'File Watch Trigger',
+  description: 'Starts the workflow when files change in a watched dir → emits { event, name, path, at } per change (debounced).',
+  version: 1,
+  kind: 'trigger',
+  icon: 'folder',
+  inputs: ['none'],
+  outputs: ['main'],
+  properties: [
+    { key: 'path', displayName: 'Directory to watch', type: 'string', default: 'watches', required: true, description: 'Relative to the watch root (data/sandbox), or absolute inside FLOWFORGE_WATCH_ROOTS' },
+    { key: 'filter', displayName: 'Filename filter (substring)', type: 'string', default: '', description: 'Only fire for names containing this (e.g. ".json"). Empty = all files' },
+    { key: 'debounceMs', displayName: 'Debounce (ms)', type: 'number', default: 500, description: 'Coalesce bursts per file (50–10000)' },
+    { key: 'recursive', displayName: 'Watch subdirectories', type: 'boolean', default: false },
+  ],
+  execute(ctx) {
+    return ctx.items.length ? ctx.items : [{ json: { ok: true } }];
+  },
+});
+
 /* ---------------------------------- actions ---------------------------------- */
 
 export const httpRequest = defineNode({
@@ -576,7 +596,7 @@ export const scriptEnd = defineNode({
 
 /** Library categories for built-in nodes. Custom nodes carry their own. */
 export const nodeCategories: Record<string, string> = {
-  manualTrigger: 'triggers', webhookTrigger: 'triggers', cronTrigger: 'triggers',
+  manualTrigger: 'triggers', webhookTrigger: 'triggers', cronTrigger: 'triggers', fileWatchTrigger: 'triggers',
   if: 'logic', switch: 'logic', filter: 'logic', merge: 'logic',
   setFields: 'data', splitOut: 'data', aggregate: 'data', jsonParse: 'data', datetime: 'data', crypto: 'data',
   code: 'code', pythonCode: 'code', scriptStart: 'code', scriptEnd: 'code',
@@ -586,7 +606,7 @@ export const nodeCategories: Record<string, string> = {
 };
 
 export const coreNodes = [
-  manualTrigger, webhookTrigger, cronTrigger,
+  manualTrigger, webhookTrigger, cronTrigger, fileWatchTrigger,
   httpRequest, setFields, ifNode, switchNode, filterNode, mergeNode,
   codeNode, pythonCodeNode, scriptStart, scriptEnd,
   noOpNode, waitNode, approvalNode, splitOutNode, aggregateNode,

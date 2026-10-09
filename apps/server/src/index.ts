@@ -10,6 +10,7 @@ import { loadMcpConfig, saveMcpConfig, mcpDistExists, MCP_TOOL_NAMES } from '@fl
 import { toExportDoc, parseImportDoc } from './workflowIo.js';
 import { diffDefinitions } from './workflowDiff.js';
 import { shouldFireCron, cronMinuteKey } from './cron.js';
+import { watchRoots, resolveWatchDir, clampDebounce, FileWatcher } from './filewatch.js';
 import { ApprovalStore } from './approvals.js';
 import {
   getCredKey, encryptFields, validateCredentialInput,
@@ -568,6 +569,63 @@ setInterval(async () => {
     }
   }
 }, 1000).unref();
+
+// File-watch triggers: reconcile watchers against active workflows every 5s.
+// A change runs the workflow with [{ event, name, path, at }]. Trust gating
+// applies (tested/approved required for automatic runs), like cron.
+const fileWatchers = new Map<string, { key: string; watcher: FileWatcher }>();
+setInterval(() => {
+  let rows: WorkflowRow[];
+  try {
+    rows = db.prepare('SELECT * FROM workflows WHERE active=1').all() as unknown as WorkflowRow[];
+  } catch { return; }
+  const roots = watchRoots(repoRoot);
+  const wanted = new Map<string, { key: string; dir: string; filter: string; debounceMs: number; recursive: boolean; wfId: string }>();
+  for (const row of rows) {
+    let def: any;
+    try { def = JSON.parse(row.definition); } catch { continue; }
+    const trigger = (def.nodes ?? []).find((n: any) => resolveNode(n.type)?.key === 'fileWatchTrigger');
+    if (!trigger) continue;
+    const filter = String(trigger.params?.filter ?? '');
+    const debounceMs = clampDebounce(trigger.params?.debounceMs);
+    const recursive = trigger.params?.recursive === true;
+    let dir: string;
+    try {
+      dir = resolveWatchDir(String(trigger.params?.path ?? ''), roots);
+    } catch (e) {
+      console.warn(`[watch] skipped ${row.id}: ${(e as Error).message}`);
+      continue;
+    }
+    wanted.set(row.id, { key: JSON.stringify({ dir, filter, debounceMs, recursive }), dir, filter, debounceMs, recursive, wfId: row.id });
+  }
+  for (const [wfId, want] of wanted) {
+    const cur = fileWatchers.get(wfId);
+    if (cur && cur.key === want.key && cur.watcher.running) continue;
+    cur?.watcher.stop();
+    const watcher = new FileWatcher(want.dir, {
+      filter: want.filter,
+      debounceMs: want.debounceMs,
+      recursive: want.recursive,
+      onEvent: (ev) => {
+        runWorkflow(want.wfId, [{ json: { event: 'file', kind: ev.kind, name: ev.name, path: ev.path, at: new Date().toISOString() } }])
+          .catch((err) => console.warn(`[watch] skipped ${want.wfId}: ${(err as Error).message}`));
+      },
+    });
+    try {
+      watcher.start();
+    } catch (e) {
+      console.warn(`[watch] cannot watch ${want.dir}: ${(e as Error).message}`);
+      continue;
+    }
+    fileWatchers.set(wfId, { key: want.key, watcher });
+  }
+  for (const [wfId, cur] of [...fileWatchers]) {
+    if (!wanted.has(wfId)) {
+      cur.watcher.stop();
+      fileWatchers.delete(wfId);
+    }
+  }
+}, 5000).unref();
 
 // Serve built web app
 const webDist = fileURLToPath(new URL('../../web/dist', import.meta.url));

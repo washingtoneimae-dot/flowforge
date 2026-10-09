@@ -47,7 +47,9 @@ apps/
 Workflows are a DAG of node instances with typed edges. The engine executes the
 graph with bounded concurrency, per-node timeouts, branch routing (If/Switch/Filter
 route items to different output handles), and execution history persisted in SQLite
-(WAL, last 200 runs per workflow).
+(WAL, last 200 runs per workflow). Automatic triggers: webhooks (`/hook/:path`),
+cron (interval or 5-field expression), and file-watch (dirs jailed to
+`FLOWFORGE_WATCH_ROOTS`, default `data/sandbox`, debounced per file).
 
 Terminology: the **Canvas** is the home view where workflows are built and run
 (orchestration); the **Library** is the node workshop where nodes are authored,
@@ -60,6 +62,7 @@ tested, approved, and versioned.
 | Manual Trigger | trigger | Starts the workflow from the editor |
 | Webhook Trigger | trigger | Starts a flow on `/hook/:path` |
 | Cron Trigger | trigger | Starts a flow on a schedule (cron expression or every N seconds) |
+| File Watch Trigger | trigger | Starts a flow when files change in a watched dir (debounced) |
 | HTTP Request | action | GET/POST/PUT/DELETE with JSON headers/body |
 | GitHub | action | GitHub REST API: list/create issues, comment (one call per item) |
 | Slack | action | Post messages via incoming webhook (credential or URL, one call per item) |
