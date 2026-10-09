@@ -10,3 +10,5 @@ data/sandbox/imports/
 data/sandbox/
 data/mcp-config.json
 data/.credkey
+data/backups/
+data/flowforge.log

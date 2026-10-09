@@ -1,0 +1,7 @@
+[Unit]
+Description=Flowforge daily SQLite backup
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/flowforge
+ExecStart=/usr/bin/env node %h/flowforge/deploy/backup.mjs

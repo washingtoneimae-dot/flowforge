@@ -1,0 +1,21 @@
+[Unit]
+Description=Flowforge workflow automation + agent runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/flowforge
+ExecStart=/usr/bin/env node %h/flowforge/apps/server/dist/index.js
+Restart=on-failure
+RestartSec=5
+Environment=PORT=3000
+Environment=NODE_ENV=production
+# Optional overrides (create the file, one KEY=value per line):
+# EnvironmentFile=%h/flowforge/data/flowforge.env
+#   PORT=3000
+#   FLOWFORGE_CRED_KEY=<64 hex chars>  (else data/.credkey is used)
+#   FLOWFORGE_WATCH_ROOTS=/srv/data:/home/mae/inbox
+
+[Install]
+WantedBy=default.target
