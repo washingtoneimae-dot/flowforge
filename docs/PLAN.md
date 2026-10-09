@@ -37,7 +37,7 @@
 
 - [ ] Drag nodes from palette onto canvas (currently click-to-add)
 - [ ] Per-node run output preview in the inspector
-- [ ] Real cron expressions (currently interval seconds)
+- [x] Real cron expressions (5-field matcher; interval-seconds still the default when empty)
 - [x] Credentials store (AES-256-GCM table, names-only API, run-time resolution, usage audit)
 - [ ] Official node packages: Slack, Discord, GitHub, Notion, Google Sheets
 - [ ] Example community node repo + template

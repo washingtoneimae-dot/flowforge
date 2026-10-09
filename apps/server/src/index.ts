@@ -9,6 +9,7 @@ import { evaluateExpression } from '@flowforge/engine';
 import { loadMcpConfig, saveMcpConfig, mcpDistExists, MCP_TOOL_NAMES } from '@flowforge/node-sdk';
 import { toExportDoc, parseImportDoc } from './workflowIo.js';
 import { diffDefinitions } from './workflowDiff.js';
+import { shouldFireCron, cronMinuteKey } from './cron.js';
 import { ApprovalStore } from './approvals.js';
 import {
   getCredKey, encryptFields, validateCredentialInput,
@@ -535,18 +536,32 @@ app.all('/hook/:path', async (req, res) => {
   res.status(404).json({ error: 'no active workflow for this webhook path' });
 });
 
-// Cron scheduler (simple setInterval loop, 1s tick, checks intervalSeconds)
-const cronState = new Map<string, number>();
+// Cron scheduler (1s tick): interval-seconds triggers plus 5-field cron
+// expressions (fire-once-per-minute via cronMinuteKey guard).
+const cronState = new Map<string, number | string>();
 setInterval(async () => {
   const rows = db.prepare('SELECT * FROM workflows WHERE active=1').all() as unknown as WorkflowRow[];
   const now = Date.now();
+  const nowDate = new Date(now);
   for (const row of rows) {
     const def = JSON.parse(row.definition);
     const trigger = def.nodes.find((n: any) => resolveNode(n.type)?.key === 'cronTrigger');
     if (!trigger) continue;
+    const expr = String(trigger.params?.cron ?? '').trim();
+    if (expr) {
+      const last = cronState.get(row.id);
+      if (shouldFireCron(expr, typeof last === 'string' ? last : undefined, nowDate)) {
+        const key = cronMinuteKey(nowDate);
+        cronState.set(row.id, key);
+        runWorkflow(row.id, [{ json: { scheduled: true, at: nowDate.toISOString(), cron: expr } }])
+          .catch((err) => console.warn(`[cron] skipped ${row.id}: ${(err as Error).message}`));
+      }
+      continue;
+    }
     const interval = Number(trigger.params?.intervalSeconds ?? 60) * 1000;
-    const last = cronState.get(row.id) ?? 0;
-    if (now - last >= interval) {
+    const last = cronState.get(row.id);
+    const lastMs = typeof last === 'number' ? last : 0;
+    if (now - lastMs >= interval) {
       cronState.set(row.id, now);
       runWorkflow(row.id, [{ json: { scheduled: true, at: new Date().toISOString() } }])
         .catch((err) => console.warn(`[cron] skipped ${row.id}: ${(err as Error).message}`));

@@ -48,14 +48,15 @@ export const webhookTrigger = defineNode({
 export const cronTrigger = defineNode({
   key: 'cronTrigger',
   displayName: 'Cron Trigger',
-  description: 'Starts the workflow every N seconds → emits { scheduled: true, at }.',
+  description: 'Starts the workflow on a schedule → emits { scheduled: true, at }. Set a 5-field cron expression, or leave it empty for every-N-seconds.',
   version: 1,
   kind: 'trigger',
   icon: 'clock',
   inputs: ['none'],
   outputs: ['main'],
   properties: [
-    { key: 'intervalSeconds', displayName: 'Interval (seconds)', type: 'number', default: 60, required: true },
+    { key: 'intervalSeconds', displayName: 'Interval (seconds)', type: 'number', default: 60, required: true, description: 'Used when Cron expression is empty' },
+    { key: 'cron', displayName: 'Cron expression (minute hour dom month dow)', type: 'string', default: '', description: 'e.g. "*/15 9-17 * * mon-fri". Wins over Interval when set' },
   ],
   execute(ctx) {
     return ctx.items.length ? ctx.items : [{ json: { triggeredAt: new Date().toISOString() } }];

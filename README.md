@@ -59,7 +59,7 @@ tested, approved, and versioned.
 |---|---|---|
 | Manual Trigger | trigger | Starts the workflow from the editor |
 | Webhook Trigger | trigger | Starts a flow on `/hook/:path` |
-| Cron Trigger | trigger | Starts a flow every N seconds |
+| Cron Trigger | trigger | Starts a flow on a schedule (cron expression or every N seconds) |
 | HTTP Request | action | GET/POST/PUT/DELETE with JSON headers/body |
 | GitHub | action | GitHub REST API: list/create issues, comment (one call per item) |
 | Set / Edit Fields | action | Merge fields into each item |
