@@ -15,11 +15,15 @@ import { loadMcpConfig } from '@flowforge/node-sdk';
 import { normalizeDefinition, summarizeRun } from './workflow.js';
 
 const BASE = (process.env.FLOWFORGE_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+const TOKEN = (process.env.FLOWFORGE_TOKEN ?? '').trim();
 
 async function ff<T = any>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();

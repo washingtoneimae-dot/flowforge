@@ -5,6 +5,7 @@ import {
 } from '@xyflow/react';
 import './index.css';
 import { applyRunEvent, initialLiveState } from './live.js';
+import { SetupScreen, LoginScreen } from './AuthScreens.js';
 
 const CodeField = React.lazy(() => import('./CodeField.js'));
 const CodeFieldFallback = ({ height }: { height: number | string }) => (
@@ -12,7 +13,10 @@ const CodeFieldFallback = ({ height }: { height: number | string }) => (
 );
 
 const api = async (path: string, init?: RequestInit) => {
-  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...init });
+  const r = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, ...init });
+  if (r.status === 401 && !path.startsWith('/api/auth/')) {
+    window.dispatchEvent(new Event('ff-unauthorized'));
+  }
   return r.json();
 };
 
@@ -315,6 +319,28 @@ const loadDisabled = (): string[] => {
 };
 
 export default function App() {
+  const [auth, setAuth] = useState<{ setupRequired: boolean; authenticated: boolean } | null>(null);
+
+  const refreshAuth = async () => {
+    try {
+      setAuth(await api('/api/auth/status'));
+    } catch {
+      setAuth({ setupRequired: false, authenticated: false });
+    }
+  };
+
+  useEffect(() => {
+    refreshAuth();
+    const onUnauth = () => setAuth((a) => (a?.authenticated ? { ...a, authenticated: false } : a));
+    window.addEventListener('ff-unauthorized', onUnauth);
+    return () => window.removeEventListener('ff-unauthorized', onUnauth);
+  }, []);
+
+  const logout = async () => {
+    await api('/api/auth/logout', { method: 'POST', body: '{}' });
+    setAuth({ setupRequired: false, authenticated: false });
+  };
+
   const [workflows, setWorkflows] = useState<any[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [name, setName] = useState('Untitled workflow');
@@ -326,6 +352,11 @@ export default function App() {
   const [credentials, setCredentials] = useState<any[]>([]);
   const [credForm, setCredForm] = useState({ name: '', type: 'token', fields: '{"token":""}' });
   const [credError, setCredError] = useState<string | null>(null);
+  const [pwForm, setPwForm] = useState({ current: '', next: '', next2: '' });
+  const [pwMsg, setPwMsg] = useState<string | null>(null);
+  const [apiTokens, setApiTokens] = useState<any[]>([]);
+  const [tokenLabel, setTokenLabel] = useState('mcp');
+  const [newToken, setNewToken] = useState<string | null>(null);
   const [live, setLive] = useState(initialLiveState);
   const [approvals, setApprovals] = useState<any[]>([]);
 
@@ -409,7 +440,12 @@ export default function App() {
   const toggleExpr = (nodeId: string, key: string) =>
     setExprKeys((ks) => (exprOn(nodeId, key) ? ks.filter((k) => k !== `${nodeId}:${key}`) : [...ks, `${nodeId}:${key}`]));
 
-  useEffect(() => { api('/api/nodes').then(setNodeDefs); api('/api/workflows').then(setWorkflows); api('/api/credentials').then(setCredentials).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!auth?.authenticated) return;
+    api('/api/nodes').then(setNodeDefs);
+    api('/api/workflows').then(setWorkflows);
+    loadCredentials();
+  }, [auth?.authenticated]);
   const refreshNodes = useCallback(() => api('/api/nodes').then(setNodeDefs), []);
 
   const toggleDisabled = (key: string) =>
@@ -728,8 +764,36 @@ export default function App() {
     setDraftDisabled(s.disabledTools ?? []);
     setCopied(false);
     setCredError(null);
+    setPwMsg(null);
+    setPwForm({ current: '', next: '', next2: '' });
+    setNewToken(null);
     await loadCredentials();
+    try { setApiTokens(await api('/api/auth/tokens')); } catch { setApiTokens([]); }
     setShowSettings(true);
+  };
+
+  const changePassword = async () => {
+    setPwMsg(null);
+    if (pwForm.next !== pwForm.next2) { setPwMsg('new passwords do not match'); return; }
+    const r = await api('/api/auth/password', { method: 'POST', body: JSON.stringify({ current: pwForm.current, next: pwForm.next }) });
+    if (r?.error) { setPwMsg(r.error); return; }
+    setPwForm({ current: '', next: '', next2: '' });
+    setShowSettings(false);
+    setAuth({ setupRequired: false, authenticated: false });
+  };
+
+  const createToken = async () => {
+    setNewToken(null);
+    const r = await api('/api/auth/tokens', { method: 'POST', body: JSON.stringify({ label: tokenLabel.trim() || 'token' }) });
+    if (r?.error) { setNewToken(`error: ${r.error}`); return; }
+    setNewToken(r.token);
+    try { setApiTokens(await api('/api/auth/tokens')); } catch { /* ignore */ }
+  };
+
+  const revokeToken = async (id: string) => {
+    await api('/api/auth/tokens', { method: 'DELETE', body: JSON.stringify({ id }) });
+    setNewToken(null);
+    try { setApiTokens(await api('/api/auth/tokens')); } catch { /* ignore */ }
   };
 
   const saveSettings = async () => {
@@ -776,8 +840,8 @@ export default function App() {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const mcpJsonSnippet = mcp ? JSON.stringify({ mcpServers: { flowforge: { command: mcp.command, args: mcp.args, env: { FLOWFORGE_URL: draftUrl || mcp.flowforgeUrl } } } }, null, 2) : '';
-  const mcpClaudeCmd = mcp ? `claude mcp add flowforge -e FLOWFORGE_URL=${draftUrl || mcp.flowforgeUrl} -- node ${mcp.distPath}` : '';
+  const mcpJsonSnippet = mcp ? JSON.stringify({ mcpServers: { flowforge: { command: mcp.command, args: mcp.args, env: { FLOWFORGE_URL: draftUrl || mcp.flowforgeUrl, FLOWFORGE_TOKEN: '<paste API token here>' } } } }, null, 2) : '';
+  const mcpClaudeCmd = mcp ? `claude mcp add flowforge -e FLOWFORGE_URL=${draftUrl || mcp.flowforgeUrl} -e FLOWFORGE_TOKEN=<paste-API-token> -- node ${mcp.distPath}` : '';
 
   const TOOL_BLURBS: Record<string, string> = {
     list_nodes: 'Browse the node catalog', describe_node: 'Read a node’s parameter schema',
@@ -940,6 +1004,10 @@ export default function App() {
     setEditTestResult(r);
   };
 
+  if (!auth) return <div className="auth-wrap"><p className="muted">Loading…</p></div>;
+  if (auth.setupRequired) return <SetupScreen onDone={refreshAuth} />;
+  if (!auth.authenticated) return <LoginScreen onDone={refreshAuth} />;
+
   return (
     <div className="app">
       <div className="topbar">
@@ -959,6 +1027,7 @@ export default function App() {
         </label>
         <button className="btn" onClick={save}>Save</button>
         <button className="btn primary" onClick={run}>Run</button>
+        <button className="btn ghost" onClick={logout} title="Log out">⏻</button>
         {live.running && <span className="live-badge" title={`Execution ${live.executionId ?? ''}`}>● LIVE{live.executionId ? ` ${live.executionId.slice(-6)}` : ''}</span>}
         {!live.running && live.status && <span className={`live-badge done ${live.status}`} title={`Last run ${live.executionId ?? ''}`}>{live.status === 'success' ? '✓' : '✗'} {live.executionId ? live.executionId.slice(-6) : ''}</span>}
       </div>
@@ -1187,7 +1256,7 @@ export default function App() {
                   </button>
                 </div>
                 <pre className="snippet">{settingsClient === 'claude-code' ? mcpClaudeCmd : mcpJsonSnippet}</pre>
-                <div className="desc">Flowforge itself must be running first — the MCP server probes it and refuses to start otherwise.</div>
+                <div className="desc">Flowforge itself must be running first — the MCP server probes it and refuses to start otherwise. Create an API token below and paste it as FLOWFORGE_TOKEN, or every call fails closed with “not authenticated”.</div>
                 <h3>Tools exposed to agents</h3>
                 <div className="desc">Uncheck to hide a tool. Takes effect when the MCP server (re)starts.</div>
                 <div className="tool-grid">
@@ -1221,6 +1290,29 @@ export default function App() {
                 <div className="row">
                   <button className="btn" onClick={saveCredential}>Add credential</button>
                 </div>
+                <h3>Owner password</h3>
+                <div className="desc">Changing it logs out every session (UI + tokens). Unavailable when FLOWFORGE_PASSWORD is set.</div>
+                <div className="row">
+                  <input type="password" value={pwForm.current} onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })} placeholder="current" autoComplete="current-password" style={{ maxWidth: 160 }} />
+                  <input type="password" value={pwForm.next} onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })} placeholder="new (min 8)" autoComplete="new-password" style={{ maxWidth: 160 }} />
+                  <input type="password" value={pwForm.next2} onChange={(e) => setPwForm({ ...pwForm, next2: e.target.value })} placeholder="repeat new" autoComplete="new-password" style={{ maxWidth: 160 }} />
+                  <button className="btn" onClick={changePassword}>Change</button>
+                </div>
+                {pwMsg && <div className={pwMsg.startsWith('error') || pwMsg.includes('not match') || pwMsg.includes('wrong') ? 'error' : 'muted'} style={{ marginTop: 6 }}>{pwMsg}</div>}
+                <h3>API tokens</h3>
+                <div className="desc">Long-lived Bearer tokens for the MCP server (<code>FLOWFORGE_TOKEN</code>) and scripts. Shown once — revoke and re-create if lost.</div>
+                {apiTokens.length === 0 && <div className="muted">No tokens yet.</div>}
+                {apiTokens.map((t: any) => (
+                  <div key={t.id} className="version-row">
+                    <span><b>{t.label}</b> · <code>{t.id}</code> · created {String(t.created_at ?? '').slice(0, 16).replace('T', ' ')} · expires {String(t.expires_at ?? '').slice(0, 10)}</span>
+                    <button className="btn ghost" onClick={() => revokeToken(t.id)}>Revoke</button>
+                  </div>
+                ))}
+                <div className="row" style={{ marginTop: 8 }}>
+                  <input value={tokenLabel} onChange={(e) => setTokenLabel(e.target.value)} placeholder="label" style={{ maxWidth: 160 }} />
+                  <button className="btn" onClick={createToken}>Create token</button>
+                </div>
+                {newToken && <pre className="snippet" style={{ marginTop: 8 }}>{newToken}</pre>}
               </>
             )}
           </div>

@@ -93,6 +93,16 @@ CREATE TABLE IF NOT EXISTS credentials (
   data TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  label TEXT,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
 );`);
 
 try {

@@ -112,6 +112,13 @@ body { background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui
 .live-badge { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; border: 1px solid var(--ink); border-radius: 20px; padding: 3px 10px; background: #111; color: #fff; animation: ff-pulse 1s ease-in-out infinite; }
 .live-badge.done { animation: none; background: #fff; color: var(--ink); }
 .live-badge.done.error { border-color: var(--err); color: var(--err); }
+
+/* auth gate */
+.auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); padding: 20px; }
+.auth-card { background: #fff; border: 1px solid var(--line-2); border-radius: 14px; padding: 28px; width: min(380px, 92vw); }
+.auth-card h1 { margin: 0 0 8px; font-size: 20px; }
+.auth-card p { margin: 0 0 16px; }
+.auth-card .btn { width: 100%; margin-top: 4px; }
 .ff-node.status-waiting { border: 2px dashed var(--ink); animation: ff-pulse 1.2s ease-in-out infinite; }
 .noderun.waiting { border-style: dashed; }
 .approval-banner { display: flex; align-items: center; gap: 12px; background: #111; color: #fff; border-radius: 10px; padding: 8px 12px; margin: 8px 8px 0; font-size: 12px; z-index: 5; }

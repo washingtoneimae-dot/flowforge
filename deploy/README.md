@@ -36,6 +36,10 @@ Optional `data/flowforge.env` (see comments in `deploy/flowforge.service`):
 - `PORT` (default 3000)
 - `FLOWFORGE_CRED_KEY` (64 hex chars; default: auto `data/.credkey`, never commit it)
 - `FLOWFORGE_WATCH_ROOTS` (colon-separated; default `<repo>/data/sandbox`)
+- `FLOWFORGE_PASSWORD` (owner password; when set, UI setup is skipped and password change is disabled — prefer this on shared machines)
+
+MCP clients need a token now: create one in Settings → API tokens and set
+`FLOWFORGE_TOKEN` in the client's env (see the generated snippets).
 
 Restore: stop the service, copy a `data/backups/flowforge-*.db` over
 `data/flowforge.db` (remove stale `-wal`/`-shm` first), start.

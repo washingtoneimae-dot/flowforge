@@ -212,6 +212,23 @@ generates copy-paste configs for Claude Code / Claude Desktop / generic
 clients, stores the public URL, and toggles which tools agents may use
 (`GET/PUT /api/settings/mcp`, persisted in `data/mcp-config.json`).
 
+## Security model
+
+Single-owner auth, no exceptions:
+
+- First boot (or upgrade) starts in **setup mode** — set the owner password
+  once in the UI (`FLOWFORGE_PASSWORD` env skips setup; min 8 chars, scrypt).
+- The UI uses an httpOnly cookie; API/MCP clients use
+  `Authorization: Bearer <token>`. Everything under `/api` except
+  `/api/auth/*` returns 401 without one. Login is throttled (10 fails → 429).
+- Long-lived **API tokens** (Settings → API tokens, shown once) back the MCP
+  server (`FLOWFORGE_TOKEN`) and scripts; revoke by row, value, or all.
+  Changing the password revokes every session and token.
+- `/hook/*` stays open by design — external services can't log in, so treat
+  webhook paths as unguessable secrets (long random paths).
+- Same rules as ever for secrets: credential *values* never appear in any
+  API, export, or MCP response; runs only record credential *names*.
+
 ## Capability sandbox (permissions)
 
 Custom-node code runs in a `vm` sandbox with `items`/`params` in scope — and,

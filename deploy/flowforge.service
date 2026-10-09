@@ -16,6 +16,7 @@ Environment=NODE_ENV=production
 #   PORT=3000
 #   FLOWFORGE_CRED_KEY=<64 hex chars>  (else data/.credkey is used)
 #   FLOWFORGE_WATCH_ROOTS=/srv/data:/home/mae/inbox
+#   FLOWFORGE_PASSWORD=<owner password> (skips first-run setup; disables password change)
 
 [Install]
 WantedBy=default.target

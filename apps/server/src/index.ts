@@ -17,6 +17,11 @@ import {
   listCredentials, insertCredential, updateCredential, deleteCredential,
   getCredentialFields, resolveCredentialRefs,
 } from './credentials.js';
+import {
+  setupRequired, setupPassword, checkPassword, changePassword,
+  mintSession, createApiToken, validateSession, revokeSession, revokeTokenById, revokeAllSessions,
+  listApiTokens, loginAllowed, recordLogin,
+} from './auth.js';
 import { setApprovalHandler } from '@flowforge/nodes-core';
 import { executeWorkflow, Workflow } from '@flowforge/engine';
 import { mkdirSync, watch } from 'node:fs';
@@ -30,6 +35,16 @@ app.use((req, res, next) => {
   if (req.path === '/api/files/import') return next();
   return jsonSmall(req, res, next);
 });
+
+// Auth guard FIRST: public surface is the UI shell, /api/auth/*, and /hook/*
+// (external services can't log in — treat webhook paths as unguessable
+// secrets). requireAuth is a hoisted function declaration (defined below).
+app.use('/api', (req: any, res: any, next: () => void) => {
+  if (req.path.startsWith('/auth/') || req.path === '/auth') return next();
+  return requireAuth(req, res, next);
+});
+
+const id = () => `wf_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 // Repo root (server runs from apps/server/dist or apps/server/src).
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -73,7 +88,110 @@ app.put('/api/settings/mcp', (req, res) => {
   } catch (e) { res.status(400).json({ error: (e as Error).message }); }
 });
 
-const id = () => `wf_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+/* ---------------------------------- auth ---------------------------------- */
+
+const SESSION_COOKIE = 'ff_session';
+const COOKIE_OPTS = 'HttpOnly; Path=/; SameSite=Lax';
+
+function parseCookies(req: any): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const part of String(req.headers?.cookie ?? '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
+function bearerToken(req: any): string {
+  const h = String(req.headers?.authorization ?? '');
+  const m = h.match(/^Bearer\s+(.+)$/i);
+  return m ? m[1].trim() : '';
+}
+
+/** The request's session (cookie or Bearer), or null. */
+function authed(req: any) {
+  return validateSession(bearerToken(req) || parseCookies(req)[SESSION_COOKIE] || '');
+}
+
+function setSessionCookie(res: any, token: string | null, maxAge: number) {
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token ?? ''}; ${COOKIE_OPTS}; Max-Age=${maxAge}`);
+}
+
+/** Everything under /api except auth + webhooks requires a session. */
+function requireAuth(req: any, res: any, next: () => void) {
+  if (!authed(req)) return res.status(401).json({ error: 'not authenticated — log in' });
+  return next();
+}
+
+app.get('/api/auth/status', (req, res) => {
+  res.json({ setupRequired: setupRequired(), authenticated: authed(req) !== null });
+});
+
+app.post('/api/auth/setup', (req, res) => {
+  try {
+    setupPassword(String(req.body?.password ?? ''));
+    const { token } = mintSession(null);
+    setSessionCookie(res, token, 30 * 24 * 3600);
+    res.status(201).json({ ok: true });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const ip = String(req.ip ?? req.socket?.remoteAddress ?? 'unknown');
+  if (!loginAllowed(ip)) return res.status(429).json({ error: 'too many attempts — try again in a few minutes' });
+  if (setupRequired()) {
+    recordLogin(ip, false);
+    return res.status(400).json({ error: 'no password set yet — complete setup first' });
+  }
+  const ok = checkPassword(String(req.body?.password ?? ''));
+  recordLogin(ip, ok);
+  if (!ok) return res.status(401).json({ error: 'wrong password' });
+  const { token } = mintSession(null);
+  setSessionCookie(res, token, 30 * 24 * 3600);
+  res.json({ ok: true });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const token = bearerToken(req) || parseCookies(req)[SESSION_COOKIE] || '';
+  if (token) revokeSession(token);
+  setSessionCookie(res, null, 0);
+  res.json({ ok: true });
+});
+
+app.post('/api/auth/password', requireAuth, (req, res) => {
+  try {
+    changePassword(String(req.body?.current ?? ''), String(req.body?.next ?? ''));
+    revokeAllSessions();
+    setSessionCookie(res, null, 0);
+    res.json({ ok: true, relogin: true });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+
+app.get('/api/auth/tokens', requireAuth, (_req, res) => {
+  res.json(listApiTokens());
+});
+
+app.post('/api/auth/tokens', requireAuth, (req, res) => {
+  try {
+    const { token, expires_at } = createApiToken(String(req.body?.label ?? ''));
+    res.status(201).json({ token, expires_at, warning: 'shown once — store it in FLOWFORGE_TOKEN' });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+
+app.delete('/api/auth/tokens', requireAuth, (req, res) => {
+  // Revoke one token (by value or row id) or all (all: true).
+  if (req.body?.all === true) return res.json({ ok: true, revoked: revokeAllSessions() });
+  const token = String(req.body?.token ?? '');
+  if (token) {
+    if (!revokeSession(token)) return res.status(404).json({ error: 'unknown token' });
+    return res.json({ ok: true });
+  }
+  const id = String(req.body?.id ?? '');
+  if (!id) return res.status(400).json({ error: 'token, id, or all:true is required' });
+  const n = revokeTokenById(id);
+  if (!n) return res.status(404).json({ error: 'unknown token' });
+  res.json({ ok: true, revoked: n });
+});
 
 app.get('/api/nodes', (_req, res) => {
   res.json([...nodeRegistry.values()].map((n) => ({
