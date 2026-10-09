@@ -36,4 +36,15 @@ describe('applyRunEvent', () => {
   it('ignores subscribed pings', () => {
     expect(applyRunEvent(initialLiveState, { type: 'subscribed', workflowId: 'w' })).toEqual(initialLiveState);
   });
+
+  it('tracks approval waits as waiting nodes', () => {
+    let s = applyRunEvent(initialLiveState, { type: 'run-start', executionId: 'e1', workflowId: 'w', startedAt: 't' });
+    s = applyRunEvent(s, { type: 'approval-requested', executionId: 'e1', workflowId: 'w', nodeId: 'n5', prompt: 'Ship it?', requestedAt: 't' });
+    expect(s.nodes.n5.status).toBe('waiting');
+    expect(s.running).toBe(true);
+    s = applyRunEvent(s, { type: 'approval-decided', executionId: 'e1', workflowId: 'w', nodeId: 'n5', approved: true, by: 'imae' });
+    expect(s.nodes.n5.status).toBe('waiting'); // node-finish follows with the final status
+    s = applyRunEvent(s, { type: 'node-finish', executionId: 'e1', nodeId: 'n5', status: 'success', durationMs: 60000, items: 1 });
+    expect(s.nodes.n5.status).toBe('success');
+  });
 });

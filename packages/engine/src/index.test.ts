@@ -118,4 +118,38 @@ describe('executeWorkflow', () => {
     expect(started).toEqual(['a']);
     expect(finished).toEqual(['a']);
   });
+
+  it('passes executionId and nodeId to node contexts', async () => {
+    let seen: any = null;
+    const spy: NodeDefinition = {
+      key: 'spy', displayName: 'Spy', description: '', version: 1,
+      kind: 'action', inputs: ['main'], outputs: ['main'], properties: [],
+      execute: (ctx) => { seen = { executionId: (ctx as any).executionId, nodeId: (ctx as any).nodeId }; return ctx.items; },
+    };
+    const wf: Workflow = {
+      id: 'w7', name: 't',
+      nodes: [{ id: 'n9', type: 'spy', position: { x: 0, y: 0 }, params: {} }],
+      edges: [],
+    };
+    const res = await executeWorkflow(wf, (t) => (t === 'spy' ? spy : undefined), { executionId: 'exec_ctx1' });
+    expect(res.status).toBe('success');
+    expect(seen).toEqual({ executionId: 'exec_ctx1', nodeId: 'n9' });
+  });
+
+  it('honors a node-level timeoutMs over the engine default', async () => {
+    const quick: NodeDefinition = {
+      key: 'quick', displayName: 'Quick', description: '', version: 1,
+      kind: 'action', inputs: ['main'], outputs: ['main'], properties: [],
+      timeoutMs: 20,
+      execute: () => new Promise((r) => setTimeout(() => r([{ json: {} }]), 500)),
+    };
+    const wf: Workflow = {
+      id: 'w8', name: 't',
+      nodes: [{ id: 'a', type: 'quick', position: { x: 0, y: 0 }, params: {} }],
+      edges: [],
+    };
+    const res = await executeWorkflow(wf, (t) => (t === 'quick' ? quick : undefined), { nodeTimeoutMs: 5000 });
+    expect(res.results[0].status).toBe('error');
+    expect(res.results[0].error).toMatch(/timed out/);
+  });
 });

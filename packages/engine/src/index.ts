@@ -139,11 +139,15 @@ export async function executeWorkflow(
         items,
         vars,
         workflow: { id: wf.id, name: wf.name },
+        executionId,
+        nodeId: n.id,
         expr: (template, item) => evaluateExpression(template, scopeFor(item, vars, n.params)),
         error: (m) => new Error(m),
       };
       try {
-        const out = await withTimeout(Promise.resolve(def.execute(ctx)), nodeTimeoutMs, def.displayName);
+        // A node may declare its own cap (e.g. Approval waits hours for a human).
+        const limit = def.timeoutMs ?? nodeTimeoutMs;
+        const out = await withTimeout(Promise.resolve(def.execute(ctx)), limit, def.displayName);
         const branches = isBranchOutput(out) ? out.branches : [out];
         produced.set(n.id, branches);
         const all = branches.flat();

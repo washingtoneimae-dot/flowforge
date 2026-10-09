@@ -5,6 +5,8 @@ export type RunEvent =
   | { type: 'run-start'; executionId: string; workflowId: string; startedAt: string }
   | { type: 'node-start'; executionId: string; nodeId: string; startedAt: string }
   | { type: 'node-finish'; executionId: string; nodeId: string; status: string; durationMs: number; items?: number; error?: string }
+  | { type: 'approval-requested'; executionId: string; workflowId: string; nodeId: string; prompt: string; requestedAt: string }
+  | { type: 'approval-decided'; executionId: string; workflowId: string; nodeId: string; approved: boolean; by?: string; expired?: boolean }
   | { type: 'run-finish'; executionId: string; status: string; finishedAt: string };
 
 export interface LiveNode {
@@ -40,6 +42,22 @@ export function applyRunEvent(prev: LiveState, ev: RunEvent): LiveState {
         running: true,
         nodes: { ...prev.nodes, [ev.nodeId]: { status: 'running' } },
       };
+    case 'approval-requested': {
+      const base: LiveState =
+        prev.executionId === ev.executionId
+          ? prev
+          : { executionId: ev.executionId, running: true, status: null, nodes: {} };
+      return {
+        ...base,
+        running: true,
+        nodes: { ...base.nodes, [ev.nodeId]: { status: 'waiting' } },
+      };
+    }
+    case 'approval-decided':
+      // The node's finish event follows with the final status; adopt the
+      // execution so a concurrent newer run does not get clobbered.
+      if (prev.executionId !== null && prev.executionId !== ev.executionId) return prev;
+      return { ...prev, executionId: ev.executionId, running: true };
     case 'node-finish': {
       const base: LiveState =
         prev.executionId === ev.executionId

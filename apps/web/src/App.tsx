@@ -324,6 +324,26 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<any>(null);
   const [live, setLive] = useState(initialLiveState);
+  const [approvals, setApprovals] = useState<any[]>([]);
+
+  const loadApprovals = useCallback((id: string | null) => {
+    if (!id) { setApprovals([]); return; }
+    api(`/api/approvals?workflowId=${encodeURIComponent(id)}`).then(setApprovals).catch(() => {});
+  }, []);
+
+  const decideApproval = async (executionId: string, nodeId: string, approved: boolean) => {
+    let comment: string | undefined;
+    if (!approved) {
+      const raw = prompt('Reason for rejection (optional):');
+      if (raw === null) return;
+      comment = raw || undefined;
+    }
+    const r = await api(`/api/approvals/${executionId}/${nodeId}`, {
+      method: 'POST', body: JSON.stringify({ approved, by: 'human', comment }),
+    });
+    if (r?.error) alert(`Decision failed: ${r.error}`);
+    if (currentId) loadApprovals(currentId);
+  };
   const [active, setActive] = useState(true);
   const [testInput, setTestInput] = useState('[{"json": {}}]');
   const [testResult, setTestResult] = useState<any>(null);
@@ -432,6 +452,12 @@ export default function App() {
       } else if (ev.type === 'node-finish') {
         const nid = String(ev.nodeId);
         setNodes((ns) => ns.map((n) => (n.id === nid ? { ...n, data: { ...n.data, status: ev.status, error: ev.error } } : n)));
+      } else if (ev.type === 'approval-requested') {
+        const nid = String(ev.nodeId);
+        setNodes((ns) => ns.map((n) => (n.id === nid ? { ...n, data: { ...n.data, status: 'waiting', error: undefined } } : n)));
+        loadApprovals(currentId);
+      } else if (ev.type === 'approval-decided') {
+        loadApprovals(currentId);
       } else if (ev.type === 'run-finish' && ev.executionId) {
         api(`/api/executions/${ev.executionId}`).then((row: any) => {
           const r = row?.result ?? row;
@@ -446,7 +472,15 @@ export default function App() {
     };
     es.onerror = () => { /* EventSource retries on its own */ };
     return () => es.close();
-  }, [currentId, setNodes]);
+  }, [currentId, setNodes, loadApprovals]);
+
+  // Approval polling fallback (SSE may drop on flaky networks).
+  useEffect(() => {
+    loadApprovals(currentId);
+    if (!currentId) return;
+    const t = setInterval(() => loadApprovals(currentId), 10_000);
+    return () => clearInterval(t);
+  }, [currentId, loadApprovals]);
 
   const enabledDefs = useMemo(() => nodeDefs.filter((d) => !disabled.includes(d.key) && !d.trust?.disabled), [nodeDefs, disabled]);
 
@@ -935,6 +969,16 @@ export default function App() {
           ))}
         </aside>
         <div className="canvas">
+          {approvals.map((a) => (
+            <div key={`${a.executionId}:${a.nodeId}`} className="approval-banner">
+              <span><b>⏸ Approval needed</b> — {a.prompt}</span>
+              <span className="muted">{a.nodeId} · exec …{String(a.executionId).slice(-6)} · {a.itemCount} item{a.itemCount === 1 ? '' : 's'}</span>
+              <span className="approval-btns">
+                <button className="btn primary" onClick={() => decideApproval(a.executionId, a.nodeId, true)}>Approve</button>
+                <button className="btn" onClick={() => decideApproval(a.executionId, a.nodeId, false)}>Reject</button>
+              </span>
+            </div>
+          ))}
           <ReactFlow
             nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
             onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
@@ -1020,6 +1064,12 @@ export default function App() {
               <div style={{ marginTop: 12 }}>
                 <button className="btn ghost" onClick={deleteSelected}>Delete node</button>
               </div>
+              {selected && (live.nodes[selected.id]?.status === 'waiting') && (
+                <div className="noderun waiting">
+                  <b>⏸ Waiting for your decision</b>
+                  <div className="muted">This run is paused here. Approving continues on output 0, rejecting on output 1.</div>
+                </div>
+              )}
               {selectedRun && (
                 <>
                   <h3 style={{ marginTop: 20 }}>Last run — {selectedRun.self.status}{selectedRun.self.durationMs != null ? ` · ${selectedRun.self.durationMs}ms` : ''}</h3>

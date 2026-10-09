@@ -9,6 +9,8 @@ import { evaluateExpression } from '@flowforge/engine';
 import { loadMcpConfig, saveMcpConfig, mcpDistExists, MCP_TOOL_NAMES } from '@flowforge/node-sdk';
 import { toExportDoc, parseImportDoc } from './workflowIo.js';
 import { diffDefinitions } from './workflowDiff.js';
+import { ApprovalStore } from './approvals.js';
+import { setApprovalHandler } from '@flowforge/nodes-core';
 import { executeWorkflow, Workflow } from '@flowforge/engine';
 import { mkdirSync, watch } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -202,13 +204,16 @@ app.get('/api/files', (req, res) => {
 app.post('/api/nodes/:key/test', async (req, res) => {
   const def = resolveNode(req.params.key);
   if (!def) return res.status(404).json({ error: `unknown node: ${req.params.key}` });
+  if (def.key === 'approval') {
+    return res.status(400).json({ error: 'approval nodes pause for a human decision — test them with a real workflow run instead' });
+  }
   const params = (req.body?.params && typeof req.body.params === 'object' ? req.body.params : {}) as Record<string, unknown>;
   const rawItems = Array.isArray(req.body?.items) ? req.body.items : [{ json: {} }];
   const items = rawItems.map((it: any) => (it && typeof it.json === 'object' ? { json: it.json } : { json: (it ?? {}) as Record<string, unknown> }));
   const vars: Record<string, unknown> = {};
   try {
     const out = await withTimeout(
-      Promise.resolve(def.execute({ params, items, vars, workflow: { id: 'test', name: 'node test' }, expr: (t, item) => evaluateExpression(t, { $json: item.json, $vars: vars, $params: params }), error: (m) => new Error(m) })),
+      Promise.resolve(def.execute({ params, items, vars, workflow: { id: 'test', name: 'node test' }, executionId: 'test', nodeId: def.key, expr: (t, item) => evaluateExpression(t, { $json: item.json, $vars: vars, $params: params }), error: (m) => new Error(m) })),
       30_000,
       def.displayName,
     );
@@ -306,6 +311,8 @@ type RunEvent =
   | { type: 'run-start'; executionId: string; workflowId: string; startedAt: string }
   | { type: 'node-start'; executionId: string; nodeId: string; startedAt: string }
   | { type: 'node-finish'; executionId: string; nodeId: string; status: string; durationMs: number; items?: number; error?: string }
+  | { type: 'approval-requested'; executionId: string; workflowId: string; nodeId: string; prompt: string; requestedAt: string }
+  | { type: 'approval-decided'; executionId: string; workflowId: string; nodeId: string; approved: boolean; by?: string; expired?: boolean }
   | { type: 'run-finish'; executionId: string; status: string; finishedAt: string };
 
 const runSubscribers = new Map<string, Set<any>>();
@@ -318,6 +325,23 @@ function publishRunEvent(workflowId: string, ev: RunEvent) {
     try { res.write(line); } catch { subs.delete(res); }
   }
 }
+
+// Human-in-the-loop approvals: the approval node suspends its run here until
+// a human POSTs a decision. Human-only by design — no MCP tool resolves these.
+const approvalStore = new ApprovalStore((ev) => {
+  if (ev.type === 'approval-requested') {
+    publishRunEvent(ev.workflowId, {
+      type: 'approval-requested', executionId: ev.executionId, workflowId: ev.workflowId,
+      nodeId: ev.nodeId, prompt: ev.prompt, requestedAt: ev.requestedAt,
+    });
+  } else {
+    publishRunEvent(ev.workflowId, {
+      type: 'approval-decided', executionId: ev.executionId, workflowId: ev.workflowId,
+      nodeId: ev.nodeId, approved: ev.approved, by: ev.by, expired: ev.expired,
+    });
+  }
+});
+setApprovalHandler((req) => approvalStore.wait(req));
 
 async function runWorkflow(wfId: string, initialItems: unknown[] = [], opts: { manual?: boolean } = {}) {
   const row = db.prepare('SELECT * FROM workflows WHERE id=?').get(wfId) as WorkflowRow | undefined;
@@ -378,9 +402,32 @@ app.get('/api/executions/:id', (req, res) => {
   }
 });
 
+// Human decisions for approval nodes. No MCP tool touches these — liveware only.
+app.get('/api/approvals', (req, res) => {
+  const wfId = req.query.workflowId as string | undefined;
+  res.json(approvalStore.list(wfId));
+});
+
+app.get('/api/approvals/history', (req, res) => {
+  const wfId = req.query.workflowId as string | undefined;
+  const limit = Number(req.query.limit ?? 50);
+  res.json(approvalStore.historyList(wfId, Number.isFinite(limit) ? limit : 50));
+});
+
+app.post('/api/approvals/:executionId/:nodeId', (req, res) => {
+  const { approved, by, comment } = req.body ?? {};
+  if (typeof approved !== 'boolean') return res.status(400).json({ error: 'approved must be a boolean' });
+  const outcome = approvalStore.decide(req.params.executionId, req.params.nodeId, {
+    approved,
+    by: typeof by === 'string' ? by.slice(0, 80) : undefined,
+    comment: typeof comment === 'string' ? comment.slice(0, 500) : undefined,
+  });
+  if (outcome === 'missing') return res.status(410).json({ error: 'no pending approval for this execution/node (decided, expired, or unknown)' });
+  res.json({ ok: true, approved });
+});
+
 // SSE: live node-level progress for one workflow's runs.
-app.get('/api/workflows/:id/events', (req, res) => {
-  const wfId = req.params.id;
+app.get('/api/workflows/:id/events', (req, res) => {  const wfId = req.params.id;
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');

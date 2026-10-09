@@ -71,6 +71,7 @@ tested, approved, and versioned.
 | Script Start / Script End | action | Mark a collapsible, nestable script block (same Block ID) |
 | NoOp | action | Pass-through |
 | Wait | action | Pause the flow |
+| Approval | action | Pause until a human approves/rejects in the UI (output 0 = approved, 1 = rejected) |
 | Split Out | action | Fan an array field into many items |
 | Aggregate | action | Fold all items into one |
 | Date & Time | action | Add timestamps |
@@ -191,7 +192,8 @@ approve tool — `POST /api/custom-nodes/:key/approve` is UI/manual only.
 
 Live observability (glass-box): every run broadcasts SSE
 `GET /api/workflows/:id/events` (`run-start` / `node-start` / `node-finish` /
-`run-finish` with per-node `durationMs`), `GET /api/executions/:id` returns the
+`approval-requested` / `approval-decided` / `run-finish` with per-node
+`durationMs`), `GET /api/executions/:id` returns the
 full execution, and `PUT /api/workflows/:id` returns a `diff`
 (nodesAdded/Removed/Changed, edgesAdded/Removed) so liveware sees what the
 agent changed.
@@ -352,8 +354,22 @@ DELETE /api/workflows/:id         — delete
 POST   /api/workflows/:id/run     — execute now ({ items: [...] })
 GET    /api/executions?workflowId — execution history
 GET    /api/executions/:id        — one execution with parsed result
-GET    /api/workflows/:id/events  — SSE live run events (run-start/node-start/node-finish/run-finish)
+GET    /api/workflows/:id/events  — SSE live run events (run-start/node-start/node-finish/approval-*/run-finish)
+GET    /api/approvals?workflowId  — pending human approvals
+GET    /api/approvals/history     — decided approval history
+POST   /api/approvals/:executionId/:nodeId — human decision { approved, by?, comment? }
 ALL    /hook/:path                — webhook trigger
+```
+
+## Human-in-the-loop approvals
+
+Drop an **Approval** node where an agent must not proceed alone. The run
+pauses, the canvas paints the node `waiting` and shows an approval banner
+(over SSE + 10s polling fallback), and a human clicks **Approve** (continues
+on output 0) or **Reject** (continues on output 1, e.g. into a notification).
+`timeoutMinutes` (1–1440, default 60) errors the run when nobody decides;
+webhook callers wait until the decision. Decisions are human-only by design:
+there is deliberately no MCP tool for them, same as custom-node Approve.
 ```
 
 ## Roadmap
