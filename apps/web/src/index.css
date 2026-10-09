@@ -107,6 +107,11 @@ body { background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui
 .ff-node.status-error { border-color: var(--err); box-shadow: 0 0 0 1px var(--err), 0 0 12px rgba(217, 38, 38, 0.45); }
 .ff-node.status-success { border-color: var(--ink); }
 .ff-node.status-skipped { opacity: 0.45; }
+.ff-node.status-running { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); animation: ff-pulse 1s ease-in-out infinite; }
+@keyframes ff-pulse { 0%, 100% { box-shadow: 0 0 0 1px var(--ink); } 50% { box-shadow: 0 0 0 3px var(--ink); } }
+.live-badge { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; border: 1px solid var(--ink); border-radius: 20px; padding: 3px 10px; background: #111; color: #fff; animation: ff-pulse 1s ease-in-out infinite; }
+.live-badge.done { animation: none; background: #fff; color: var(--ink); }
+.live-badge.done.error { border-color: var(--err); color: var(--err); }
 .ff-node .err-dot { position: absolute; top: -8px; right: -8px; width: 18px; height: 18px; border-radius: 50%; background: var(--err); color: #fff; font-size: 12px; font-weight: 700; line-height: 18px; text-align: center; }
 .ff-node { position: relative; }
 .node-delete { position: absolute; top: -10px; right: -10px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid #111; background: #fff; color: #111; font-size: 13px; line-height: 1; cursor: pointer; padding: 0; z-index: 5; }

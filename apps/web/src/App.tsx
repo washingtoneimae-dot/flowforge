@@ -4,6 +4,7 @@ import {
   Handle, Position, NodeProps, Edge, Connection, BezierEdge, EdgeProps, EdgeLabelRenderer, useReactFlow,
 } from '@xyflow/react';
 import './index.css';
+import { applyRunEvent, initialLiveState } from './live.js';
 
 const CodeField = React.lazy(() => import('./CodeField.js'));
 const CodeFieldFallback = ({ height }: { height: number | string }) => (
@@ -322,6 +323,7 @@ export default function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<any>(null);
+  const [live, setLive] = useState(initialLiveState);
   const [active, setActive] = useState(true);
   const [testInput, setTestInput] = useState('[{"json": {}}]');
   const [testResult, setTestResult] = useState<any>(null);
@@ -412,6 +414,39 @@ export default function App() {
   }, [currentId, nodeDefs.length]);
 
   const onConnect = useCallback((c: Connection) => setEdges((eds) => addEdge({ ...c, type: 'deletable', sourceHandle: c.sourceHandle ?? '0' }, eds)), [setEdges]);
+
+  // Live run overlay: subscribe to SSE so manual, agent (MCP), webhook and
+  // cron runs all paint node status in real time — liveware sees the agent work.
+  useEffect(() => {
+    if (!currentId) { setLive(initialLiveState); return; }
+    setLive(initialLiveState);
+    const es = new EventSource(`/api/workflows/${currentId}/events`);
+    es.onmessage = (msg) => {
+      let ev: any;
+      try { ev = JSON.parse(msg.data); } catch { return; }
+      if (ev?.type === 'subscribed' || ev?.type === 'ping') return;
+      setLive((prev) => applyRunEvent(prev, ev));
+      if (ev.type === 'node-start') {
+        const nid = String(ev.nodeId);
+        setNodes((ns) => ns.map((n) => (n.id === nid ? { ...n, data: { ...n.data, status: 'running', error: undefined } } : n)));
+      } else if (ev.type === 'node-finish') {
+        const nid = String(ev.nodeId);
+        setNodes((ns) => ns.map((n) => (n.id === nid ? { ...n, data: { ...n.data, status: ev.status, error: ev.error } } : n)));
+      } else if (ev.type === 'run-finish' && ev.executionId) {
+        api(`/api/executions/${ev.executionId}`).then((row: any) => {
+          const r = row?.result ?? row;
+          if (!r?.results) return;
+          setRunResult(r);
+          const statusByNode: Record<string, string> = {};
+          const errorByNode: Record<string, string> = {};
+          for (const nr of r.results) { statusByNode[nr.nodeId] = nr.status; if (nr.error) errorByNode[nr.nodeId] = nr.error; }
+          setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, status: statusByNode[n.id], error: errorByNode[n.id] } })));
+        }).catch(() => { /* run panel keeps previous result */ });
+      }
+    };
+    es.onerror = () => { /* EventSource retries on its own */ };
+    return () => es.close();
+  }, [currentId, setNodes]);
 
   const enabledDefs = useMemo(() => nodeDefs.filter((d) => !disabled.includes(d.key) && !d.trust?.disabled), [nodeDefs, disabled]);
 
@@ -860,6 +895,8 @@ export default function App() {
         </label>
         <button className="btn" onClick={save}>Save</button>
         <button className="btn primary" onClick={run}>Run</button>
+        {live.running && <span className="live-badge" title={`Execution ${live.executionId ?? ''}`}>● LIVE{live.executionId ? ` ${live.executionId.slice(-6)}` : ''}</span>}
+        {!live.running && live.status && <span className={`live-badge done ${live.status}`} title={`Last run ${live.executionId ?? ''}`}>{live.status === 'success' ? '✓' : '✗'} {live.executionId ? live.executionId.slice(-6) : ''}</span>}
       </div>
       <div className="body">
         <aside className="sidebar">
