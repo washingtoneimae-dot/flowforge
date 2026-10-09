@@ -9,7 +9,7 @@
     "dev": "pnpm -r --parallel dev",
     "start": "pnpm --filter @flowforge/server start",
     "typecheck": "pnpm -r typecheck",
-    "test": "vitest run"
+    "test": "vitest run --no-file-parallelism"
   },
   "packageManager": "pnpm@9.15.0",
   "devDependencies": {

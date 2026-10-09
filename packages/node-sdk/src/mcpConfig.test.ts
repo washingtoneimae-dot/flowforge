@@ -24,7 +24,7 @@ describe('mcpConfig', () => {
     writeFileSync(join(root, 'data', 'mcp-config.json'), '{broken');
     expect(loadMcpConfig(root).flowforgeUrl).toBe('http://localhost:3000');
   });
-  it('knows all 17 tools', () => {
-    expect(MCP_TOOL_NAMES).toHaveLength(17);
+  it('knows all 18 tools', () => {
+    expect(MCP_TOOL_NAMES).toHaveLength(18);
   });
 });

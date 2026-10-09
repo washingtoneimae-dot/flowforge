@@ -18,12 +18,12 @@ describe('summarizeRun', () => {
     const s = summarizeRun({
       executionId: 'e1', status: 'success',
       results: [
-        { nodeId: 'n1', status: 'success', items: [{ json: { a: 1 } }] },
-        { nodeId: 'n2', status: 'error', error: 'boom' },
+        { nodeId: 'n1', status: 'success', items: [{ json: { a: 1 } }], durationMs: 12 },
+        { nodeId: 'n2', status: 'error', error: 'boom', durationMs: 3 },
       ],
     });
     expect(s.status).toBe('success');
-    expect(s.nodes[0]).toMatchObject({ nodeId: 'n1', items: 1 });
+    expect(s.nodes[0]).toMatchObject({ nodeId: 'n1', items: 1, durationMs: 12 });
     expect(s.nodes[0].preview[0]).toContain('"a":1');
     expect(s.nodes[1].error).toBe('boom');
   });

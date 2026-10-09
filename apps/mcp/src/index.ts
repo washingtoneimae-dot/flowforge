@@ -265,6 +265,13 @@ tool(
   async ({ workflowId }) => text(await ff(workflowId ? `/api/executions?workflowId=${encodeURIComponent(workflowId)}` : '/api/executions')),
 );
 
+tool(
+  'get_execution',
+  'Full detail for one execution: per-node status, item counts, durations, previews and errors. Use after run_workflow or list_executions.',
+  { id: z.string().describe('Execution id, e.g. exec_...') },
+  async ({ id }) => text(summarizeRun((await ff(`/api/executions/${encodeURIComponent(id)}`))?.result ?? {})),
+);
+
 server.resource(
   'node-catalog',
   'flowforge://nodes-catalog',

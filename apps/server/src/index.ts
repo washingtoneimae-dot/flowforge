@@ -8,6 +8,7 @@ import { resolveRoot, listFiles, importFiles } from './files.js';
 import { evaluateExpression } from '@flowforge/engine';
 import { loadMcpConfig, saveMcpConfig, mcpDistExists, MCP_TOOL_NAMES } from '@flowforge/node-sdk';
 import { toExportDoc, parseImportDoc } from './workflowIo.js';
+import { diffDefinitions } from './workflowDiff.js';
 import { executeWorkflow, Workflow } from '@flowforge/engine';
 import { mkdirSync, watch } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -283,10 +284,14 @@ app.put('/api/workflows/:id', (req, res) => {
   const definition = req.body?.definition ?? JSON.parse(row.definition);
   const active = req.body?.active ?? row.active;
   const now = new Date().toISOString();
+  let diff = null;
+  try {
+    diff = diffDefinitions(JSON.parse(row.definition), definition);
+  } catch { diff = null; }
   db.prepare('UPDATE workflows SET name=?,definition=?,active=?,updated_at=? WHERE id=?')
     .run(name, JSON.stringify(definition), active, now, req.params.id);
   queueUsageRefresh();
-  res.json({ id: req.params.id, name, definition, active, updated_at: now });
+  res.json({ id: req.params.id, name, definition, active, updated_at: now, diff });
 });
 
 app.delete('/api/workflows/:id', (req, res) => {
@@ -294,6 +299,25 @@ app.delete('/api/workflows/:id', (req, res) => {
   queueUsageRefresh();
   res.json({ ok: true });
 });
+
+// Live run events (glass-box agent observability). Clients subscribe via SSE;
+// runWorkflow broadcasts node start/finish so liveware sees what the agent does.
+type RunEvent =
+  | { type: 'run-start'; executionId: string; workflowId: string; startedAt: string }
+  | { type: 'node-start'; executionId: string; nodeId: string; startedAt: string }
+  | { type: 'node-finish'; executionId: string; nodeId: string; status: string; durationMs: number; items?: number; error?: string }
+  | { type: 'run-finish'; executionId: string; status: string; finishedAt: string };
+
+const runSubscribers = new Map<string, Set<any>>();
+
+function publishRunEvent(workflowId: string, ev: RunEvent) {
+  const subs = runSubscribers.get(workflowId);
+  if (!subs || subs.size === 0) return;
+  const line = `data: ${JSON.stringify(ev)}\n\n`;
+  for (const res of [...subs]) {
+    try { res.write(line); } catch { subs.delete(res); }
+  }
+}
 
 async function runWorkflow(wfId: string, initialItems: unknown[] = [], opts: { manual?: boolean } = {}) {
   const row = db.prepare('SELECT * FROM workflows WHERE id=?').get(wfId) as WorkflowRow | undefined;
@@ -308,7 +332,19 @@ async function runWorkflow(wfId: string, initialItems: unknown[] = [], opts: { m
     throw new Error(`custom node(s) not approved for automatic runs: ${trust.tested.join(', ')} — approve them in the Library`);
   }
   const wf: Workflow = { id: row.id, name: row.name, nodes: def.nodes, edges: def.edges };
-  const result = await executeWorkflow(wf, resolveNode, { initialItems: initialItems as any, concurrency: 4 });
+  const executionId = `exec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  publishRunEvent(wfId, { type: 'run-start', executionId, workflowId: wfId, startedAt: new Date().toISOString() });
+  const result = await executeWorkflow(wf, resolveNode, {
+    initialItems: initialItems as any,
+    concurrency: 4,
+    executionId,
+    onNodeStart: (s) => publishRunEvent(wfId, { type: 'node-start', executionId, nodeId: s.nodeId, startedAt: s.startedAt }),
+    onNodeFinish: (r) => publishRunEvent(wfId, {
+      type: 'node-finish', executionId, nodeId: r.nodeId, status: r.status,
+      durationMs: r.durationMs, items: r.items?.length, error: r.error,
+    }),
+  });
+  publishRunEvent(wfId, { type: 'run-finish', executionId, status: result.status, finishedAt: result.finishedAt });
   db.prepare('INSERT INTO executions (id,workflow_id,status,result,started_at,finished_at) VALUES (?,?,?,?,?,?)')
     .run(result.executionId, wfId, result.status, JSON.stringify(result), result.startedAt, result.finishedAt);
   // simple retention: keep last 200 executions per workflow
@@ -330,6 +366,32 @@ app.get('/api/executions', (req, res) => {
     ? db.prepare('SELECT * FROM executions WHERE workflow_id=? ORDER BY started_at DESC LIMIT 50').all(wfId)
     : db.prepare('SELECT * FROM executions ORDER BY started_at DESC LIMIT 50').all();
   res.json(rows);
+});
+
+app.get('/api/executions/:id', (req, res) => {
+  const row = db.prepare('SELECT * FROM executions WHERE id=?').get(req.params.id) as ExecutionRow | undefined;
+  if (!row) return res.status(404).json({ error: 'not found' });
+  try {
+    return res.json({ ...row, result: JSON.parse(row.result) });
+  } catch {
+    return res.json(row);
+  }
+});
+
+// SSE: live node-level progress for one workflow's runs.
+app.get('/api/workflows/:id/events', (req, res) => {
+  const wfId = req.params.id;
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  (res as any).flushHeaders?.();
+  res.write(`data: ${JSON.stringify({ type: 'subscribed', workflowId: wfId })}\n\n`);
+  let subs = runSubscribers.get(wfId);
+  if (!subs) { subs = new Set(); runSubscribers.set(wfId, subs); }
+  subs.add(res);
+  const hb = setInterval(() => { try { res.write(': ping\n\n'); } catch { /* ignore */ } }, 15_000);
+  hb.unref?.();
+  req.on('close', () => { subs!.delete(res); clearInterval(hb); });
 });
 
 // Dynamic webhook routes — match any registered webhookTrigger node path

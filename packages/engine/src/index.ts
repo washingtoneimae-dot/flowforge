@@ -52,6 +52,9 @@ export interface ExecuteOptions {
   nodeTimeoutMs?: number;
   /** Max parallel node executions across the graph. */
   concurrency?: number;
+  /** Pre-assigned execution id (generated when omitted) so live subscribers can attach early. */
+  executionId?: string;
+  onNodeStart?: (info: { nodeId: string; startedAt: string }) => void;
   onNodeFinish?: (r: NodeRunResult) => void;
 }
 
@@ -81,6 +84,7 @@ export async function executeWorkflow(
   opts: ExecuteOptions = {},
 ): Promise<ExecutionResult> {
   const startedAt = new Date();
+  const executionId = opts.executionId ?? `exec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const nodeTimeoutMs = opts.nodeTimeoutMs ?? 30_000;
   const concurrency = opts.concurrency ?? 4;
   const results: NodeRunResult[] = [];
@@ -124,6 +128,7 @@ export async function executeWorkflow(
       const def = resolve(n.type);
       const t0 = Date.now();
       const started = new Date().toISOString();
+      opts.onNodeStart?.({ nodeId: n.id, startedAt: started });
       if (!def) {
         finish(n.id, { nodeId: n.id, status: 'error', error: `Unknown node type: ${n.type}`, startedAt: started, finishedAt: new Date().toISOString(), durationMs: Date.now() - t0 });
         return;
@@ -182,7 +187,7 @@ export async function executeWorkflow(
 
   const finishedAt = new Date();
   return {
-    executionId: `exec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    executionId,
     workflowId: wf.id,
     status: results.some((r) => r.status === 'error') ? 'error' : 'success',
     results,

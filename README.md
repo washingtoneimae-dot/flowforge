@@ -179,15 +179,22 @@ Point any MCP client at it (Flowforge itself must be running):
 }
 ```
 
-14 tools: `list_nodes`, `describe_node`, `find_node`, `list_workflows`, `get_workflow`,
+18 tools: `list_nodes`, `describe_node`, `find_node`, `list_workflows`, `get_workflow`,
 `create_workflow`, `update_workflow`, `delete_workflow`, `run_workflow`,
 `test_node`, `create_custom_node`, `delete_custom_node`, `rollback_custom_node`,
 `set_custom_node_enabled`, `export_workflow`,
-`import_workflow`, `list_executions` — plus a `flowforge://nodes-catalog`
+`import_workflow`, `list_executions`, `get_execution` — plus a `flowforge://nodes-catalog`
 resource. Typical agent loop: `find_node` → `describe_node` →
 `create_custom_node` (with examples + author, if no fit) → `run_workflow` →
 fix from errors → repeat. Approval stays human: there is deliberately no
 approve tool — `POST /api/custom-nodes/:key/approve` is UI/manual only.
+
+Live observability (glass-box): every run broadcasts SSE
+`GET /api/workflows/:id/events` (`run-start` / `node-start` / `node-finish` /
+`run-finish` with per-node `durationMs`), `GET /api/executions/:id` returns the
+full execution, and `PUT /api/workflows/:id` returns a `diff`
+(nodesAdded/Removed/Changed, edgesAdded/Removed) so liveware sees what the
+agent changed.
 
 Setup lives in the UI: topbar **⚙ Settings** shows MCP status (built or not),
 generates copy-paste configs for Claude Code / Claude Desktop / generic
@@ -344,6 +351,8 @@ PUT    /api/workflows/:id         — update (name, definition, active)
 DELETE /api/workflows/:id         — delete
 POST   /api/workflows/:id/run     — execute now ({ items: [...] })
 GET    /api/executions?workflowId — execution history
+GET    /api/executions/:id        — one execution with parsed result
+GET    /api/workflows/:id/events  — SSE live run events (run-start/node-start/node-finish/run-finish)
 ALL    /hook/:path                — webhook trigger
 ```
 

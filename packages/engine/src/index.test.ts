@@ -99,4 +99,23 @@ describe('executeWorkflow', () => {
     const res = await executeWorkflow(wf, resolve, { initialItems: [{ json: { n: 1 } }] });
     expect(res.results.find((r) => r.nodeId === 'm')!.items).toHaveLength(2);
   });
+
+  it('emits start/finish hooks and honors a pre-assigned execution id', async () => {
+    const wf: Workflow = {
+      id: 'w6', name: 't',
+      nodes: [{ id: 'a', type: 'passthrough', position: { x: 0, y: 0 }, params: {} }],
+      edges: [],
+    };
+    const started: string[] = [];
+    const finished: string[] = [];
+    const res = await executeWorkflow(wf, resolve, {
+      initialItems: [{ json: {} }],
+      executionId: 'exec_test123',
+      onNodeStart: (s) => started.push(s.nodeId),
+      onNodeFinish: (r) => finished.push(r.nodeId),
+    });
+    expect(res.executionId).toBe('exec_test123');
+    expect(started).toEqual(['a']);
+    expect(finished).toEqual(['a']);
+  });
 });

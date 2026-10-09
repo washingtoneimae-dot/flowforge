@@ -42,6 +42,7 @@ export function summarizeRun(result: any) {
       nodeId: r.nodeId,
       status: r.status,
       items: typeof r.items?.length === 'number' ? r.items.length : undefined,
+      durationMs: typeof r.durationMs === 'number' ? r.durationMs : undefined,
       error: r.error,
       preview: r.items?.slice(0, 2).map((it: any) => cap(it?.json)) ?? undefined,
     })),
